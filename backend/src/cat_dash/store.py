@@ -90,10 +90,15 @@ class Store:
 
         return await self._run(write)
 
-    async def latest_litter_event(self, device_id: str) -> datetime | None:
+    async def latest_litter_event(self, device_id: str, code: str | None = None) -> datetime | None:
         def read():
+            if code is None:
+                return self._conn.execute(
+                    "SELECT MAX(ts) FROM litter_events WHERE device_id = ?", (device_id,)
+                ).fetchone()[0]
             return self._conn.execute(
-                "SELECT MAX(ts) FROM litter_events WHERE device_id = ?", (device_id,)
+                "SELECT MAX(ts) FROM litter_events WHERE device_id = ? AND code = ?",
+                (device_id, code),
             ).fetchone()[0]
 
         value = await self._run(read)

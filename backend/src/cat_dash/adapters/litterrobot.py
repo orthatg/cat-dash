@@ -31,19 +31,51 @@ _LOGGER = logging.getLogger(__name__)
 NAME = "litterrobot"
 _WEIGHT_RE = re.compile(r":\s*([\d.]+)\s*lbs", re.IGNORECASE)
 
-# How far back to backfill history on first start.
+# How far back to backfill history on first start. A busy box logs ~60 entries/day
+# (about 1,850 for 30 days), so the backfill limit must be generous.
 BACKFILL = timedelta(days=30)
+BACKFILL_LIMIT = 5000
+INCREMENTAL_LIMIT = 1000
+CLEAN_CYCLE_COMPLETE = "CCC"
+CAT_DETECTED = "CD"
 # Safety-net full refresh even when the websocket is healthy.
 REFRESH_INTERVAL = timedelta(minutes=5)
 # At most one drawer/litter snapshot per robot in this window (unless values change).
 SNAPSHOT_MIN_INTERVAL = timedelta(minutes=10)
 AUTH_RETRY = timedelta(minutes=30)
+# After a pushed status change, wait a bit and then pull the new activity entries.
+SYNC_DELAY = timedelta(seconds=20)
+
+
+def _drawer_state(data: dict, full: bool) -> str | None:
+    if full:
+        return "full"
+    if data.get("isDFIPartialFull") is True:
+        return "partial"
+    if "isDFIPartialFull" in data:
+        return "ok"
+    return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatus:
-    """Map a pylitterbot LitterRobot4 to our model."""
+    """Map a pylitterbot LitterRobot4 to our model.
+
+    Checked against a live LR4 on 2026-11-20: pylitterbot's `cycle_count` is the
+    lifetime odometer (odometerCleanCycles); cycles since the drawer was emptied is
+    the raw DFINumberOfCycles. DFILevelPercent can read 0 while isDFIPartialFull is
+    true, so `waste_drawer_state` is the more trustworthy signal.
+    """
+    data = robot.to_dict() if hasattr(robot, "to_dict") else {}
     status = robot.status
     weight = robot.pet_weight
+    full = robot.is_waste_drawer_full
     return LitterBoxStatus(
         device_id=str(robot.id),
         name=robot.name,
@@ -54,12 +86,14 @@ def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatu
         status_code=robot.status_code,
         status_text=getattr(status, "text", None),
         waste_drawer_percent=float(robot.waste_drawer_level),
-        waste_drawer_full=robot.is_waste_drawer_full,
+        waste_drawer_full=full,
+        waste_drawer_state=_drawer_state(data, full),
         litter_level_percent=float(robot.litter_level) if robot.litter_level is not None else None,
+        litter_level_state=data.get("litterLevelState"),
         cat_weight_lbs=float(weight) if weight else None,
-        cycles_since_drawer_reset=robot.cycle_count,
+        cycles_since_drawer_reset=_int_or_none(data.get("DFINumberOfCycles")),
+        lifetime_cycles=robot.cycle_count,
         sleeping=robot.is_sleeping,
-        last_seen=robot.last_seen,
         updated_at=now or datetime.now(UTC),
     )
 
@@ -124,6 +158,11 @@ class LitterRobotAdapter:
         self._tasks: list[asyncio.Task] = []
         self._last_snapshot: dict[str, tuple[datetime, tuple]] = {}
         self._insights: dict[str, Insight] = {}
+        # device_id -> {"last_clean_cycle_at": dt, "last_cat_detected_at": dt}
+        self._latest: dict[str, dict[str, datetime | None]] = {}
+        self._last_code: dict[str, str | None] = {}
+        self._sync_lock = asyncio.Lock()
+        self._sync_task: asyncio.Task | None = None
 
     @property
     def robots(self) -> list[LitterRobot4]:
@@ -136,6 +175,8 @@ class LitterRobotAdapter:
         self._tasks.append(asyncio.create_task(self._run(), name="litterrobot"))
 
     async def stop(self) -> None:
+        if self._sync_task:
+            self._tasks.append(self._sync_task)
         for task in self._tasks:
             task.cancel()
         for task in self._tasks:
@@ -220,7 +261,14 @@ class LitterRobotAdapter:
         # Called synchronously by pylitterbot; it swallows exceptions, so log our own.
         try:
             status = status_from_robot(robot)
+            if latest := self._latest.get(status.device_id):
+                status = status.model_copy(update=latest)
             self._hub.update_litter_box(status)
+            previous = self._last_code.get(status.device_id, status.status_code)
+            self._last_code[status.device_id] = status.status_code
+            if previous != status.status_code:
+                # A pushed state change (cat detected, cycle done...) means new activity.
+                self._schedule_sync()
             self._maybe_snapshot(status)
         except Exception:
             _LOGGER.exception("Failed to process Litter-Robot update")
@@ -238,17 +286,44 @@ class LitterRobotAdapter:
         task = asyncio.get_running_loop().create_task(self._store.add_litter_snapshot(status))
         task.add_done_callback(_log_task_error)
 
+    def _schedule_sync(self) -> None:
+        if self._sync_task and not self._sync_task.done():
+            return
+        self._sync_task = asyncio.get_running_loop().create_task(self._delayed_sync())
+        self._sync_task.add_done_callback(_log_task_error)
+
+    async def _delayed_sync(self) -> None:
+        await asyncio.sleep(SYNC_DELAY.total_seconds())  # let Whisker log the activity
+        await self.sync_history()
+
     async def sync_history(self) -> None:
+        async with self._sync_lock:
+            await self._sync_history()
+
+    async def _sync_history(self) -> None:
         for robot in self.robots:
             device_id = str(robot.id)
             latest = await self._store.latest_litter_event(device_id)
-            start = latest or (datetime.now(UTC) - BACKFILL)
-            activities = await robot.get_activity_history(limit=1000, start=start)
+            if latest:
+                activities = await robot.get_activity_history(limit=INCREMENTAL_LIMIT, start=latest)
+            else:
+                activities = await robot.get_activity_history(
+                    limit=BACKFILL_LIMIT, start=datetime.now(UTC) - BACKFILL
+                )
             added = await self._store.add_litter_events(
                 event_from_activity(device_id, a) for a in activities
             )
-            _LOGGER.debug("Litter-Robot %s: %d new activity rows", robot.name, added)
+            _LOGGER.info("Litter-Robot %s: %d new activity rows", robot.name, added)
+            self._latest[device_id] = {
+                "last_clean_cycle_at": await self._store.latest_litter_event(
+                    device_id, code=CLEAN_CYCLE_COMPLETE
+                ),
+                "last_cat_detected_at": await self._store.latest_litter_event(
+                    device_id, code=CAT_DETECTED
+                ),
+            }
             self._insights[device_id] = await robot.get_insight(days=30)
+            self._on_robot_update(robot)
 
 
 def _log_task_error(task: asyncio.Task) -> None:

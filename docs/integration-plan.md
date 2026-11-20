@@ -23,7 +23,22 @@ vendor data to the models in `backend/src/cat_dash/models.py`.
   `LitterBoxStatus` (for example `CCC` = clean cycle complete) or a string such as
   `"Pet Weight Recorded: 10.2 lbs"`. Without `start` the API returns only about 6 days.
 - `pylitterbot`'s `emit()` swallows callback exceptions, so our callback logs its own.
-- **Not yet verified against the real robot** (first login was rejected; see below).
+- A pushed status change (for example, a cycle finishing) triggers a history pull
+  20 s later, so "last clean cycle" and "last cat detected" stay current.
+
+Verified against a live LR4 on 2026-11-20. An anonymized response is in
+`backend/tests/fixtures/litterrobot/robot.json`, and the tests build a real
+`LitterRobot4` from it.
+
+- `pylitterbot`'s `cycle_count` is the **lifetime** odometer (`odometerCleanCycles`).
+  Cycles since the drawer was emptied is the raw `DFINumberOfCycles`.
+- `DFILevelPercent` read 0 while `isDFIPartialFull` was true and the robot had logged
+  "Drawer Full" that day. Cat Dash shows `waste_drawer_state` (full / partial / ok) as
+  the primary signal.
+- `lastSeen` was 3 days stale on an online, active robot, so it was dropped.
+- History volume is about 60 entries a day (about 1,850 for 30 days). The backfill uses
+  limit 5000. Activity entries for `DFILevelPercent` carry no value in `pylitterbot`.
+- Daily clean-cycle counts from the activity log match Whisker's own insight exactly.
 
 ## Petlibro One RFID (own client; reference: jjjonesjr33/petlibro, GPL-3.0, nothing copied)
 
@@ -61,12 +76,15 @@ in `backend/tests/fixtures/petlibro/`.
 
 ## Still unverified
 
-1. Litter-Robot: everything about the real robot (login was rejected on first try).
-2. Whether `grainOutletState == False` means a blockage (always `true` so far).
-3. Whether Cat Dash's Petlibro login signs out the phone app (a separate account is in use).
-4. Whether Whisker limits concurrent sessions (app + Cat Dash).
+1. Litter-Robot live push: the websocket subscribes fine, but no push has been seen yet
+   (nobody used the box during the 90 s probe).
+2. Cat weights in the litter box may mix several cats (4.8 to 6.1 lbs seen); per-pet
+   attribution would need Whisker pet profiles (`Account.load_pets`).
+3. Whether `grainOutletState == False` means a blockage (always `true` so far).
+4. Whether Cat Dash's Petlibro login signs out the phone app (a separate account is in use).
+5. Whether Whisker limits concurrent sessions (app + Cat Dash).
 
 ## Next
 
-- Fix the Whisker password, run `scripts/probe_litterrobot.py`, and save fixtures.
+- Watch a live push arrive (run `scripts/probe_litterrobot.py 600` and use the box).
 - Frontend: status cards from `/api/status` + `/api/stream`, charts from the history endpoints.
