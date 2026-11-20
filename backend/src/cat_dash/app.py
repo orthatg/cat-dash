@@ -248,6 +248,10 @@ def create_app(
                 else None
             ),
             "cycles_since_emptied": box.cycles_since_emptied if box else None,
+            "fill_rate_per_day": box.drawer_fill_rate_per_day if box else None,
+            "usual_empty_percent": box.drawer_usual_empty_percent if box else None,
+            "needs_emptying_at": box.drawer_needs_emptying_at if box else None,
+            "full_at": box.drawer_full_at if box else None,
             "average_days_between_empties": (
                 round(sum(intervals) / len(intervals), 2) if intervals else None
             ),

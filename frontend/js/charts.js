@@ -196,8 +196,9 @@ export function lineChart(el, opts) {
   for (const ser of opts.series) {
     if (!ser.points.length) continue;
     const d = ser.points.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+    // A dashed line means "projection" (forecasts only; never used for grids/axes).
     svg.append(s("path", { d, fill: "none", stroke: ser.color, "stroke-width": 2,
-      "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      "stroke-linejoin": "round", "stroke-linecap": "round", "stroke-dasharray": ser.dashed ? "6 5" : null }));
     if (ser.points.length === 1) {
       const p = ser.points[0];
       svg.append(s("circle", { cx: x(p.t), cy: y(p.v), r: 4, fill: ser.color }));

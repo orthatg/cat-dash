@@ -97,3 +97,24 @@ export function titleCase(text) {
 export function plural(count, word) {
   return `${number(count)} ${word}${count === 1 ? "" : "s"}`;
 }
+
+/** "Tue, Nov 24 · evening": a forecast is approximate, so name the part of the day. */
+export function dayPart(value) {
+  const d = toDate(value);
+  return d ? `${shortDate(d)} · ${partOfDay(d).split(" ").pop()}` : "—";
+}
+
+/** "Tue, Nov 24" */
+export function shortDate(value) {
+  const d = toDate(value);
+  return d ? d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : "—";
+}
+
+/** "Tuesday evening" */
+export function partOfDay(value) {
+  const d = toDate(value);
+  if (!d) return "—";
+  const hour = d.getHours();
+  const part = hour < 5 ? "night" : hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 21 ? "evening" : "night";
+  return `${d.toLocaleDateString([], { weekday: "long" })} ${part}`;
+}

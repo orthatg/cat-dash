@@ -25,7 +25,7 @@ from pylitterbot.exceptions import LitterRobotLoginException
 from pylitterbot.utils import to_timestamp
 
 from ..cats import attribute
-from ..drawer import detect_empties
+from ..drawer import FillModel, detect_empties, fill_model, forecast
 from ..hub import Hub
 from ..models import CatProfile, LitterBoxStatus, LitterEvent
 from ..store import Store
@@ -225,6 +225,7 @@ class LitterRobotAdapter:
         self._last_code: dict[str, str | None] = {}
         self._last_drawer: dict[str, float] = {}
         self._cats: list[CatProfile] = []
+        self._fill_models: dict[str, FillModel] = {}
         self._sync_lock = asyncio.Lock()
         self._sync_task: asyncio.Task | None = None
 
@@ -327,6 +328,16 @@ class LitterRobotAdapter:
             status = status_from_robot(robot)
             if latest := self._latest.get(status.device_id):
                 status = status.model_copy(update=latest)
+            if model := self._fill_models.get(status.device_id):
+                outlook = forecast(model, status.waste_drawer_percent, status.updated_at)
+                status = status.model_copy(
+                    update={
+                        "drawer_fill_rate_per_day": round(model.rate_percent_per_day, 1),
+                        "drawer_usual_empty_percent": model.usual_empty_percent,
+                        "drawer_needs_emptying_at": outlook.needs_emptying_at,
+                        "drawer_full_at": outlook.full_at,
+                    }
+                )
             if self._cats:
                 status = status.model_copy(
                     update={
@@ -420,6 +431,8 @@ class LitterRobotAdapter:
             )
             empties = await self._store.drawer_empties(device_id)
             last_emptied = empties[-1][0] if empties else None
+            if model := fill_model(empties):
+                self._fill_models[device_id] = model
             self._latest[device_id] = {
                 "last_clean_cycle_at": await self._store.latest_litter_event(
                     device_id, code=CLEAN_CYCLE_COMPLETE

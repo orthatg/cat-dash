@@ -1,6 +1,6 @@
 // "Right now" cards. Built with DOM APIs + textContent (device and cat names are data).
 
-import { clock, cups, dayClock, duration, number, plural, relTime, titleCase } from "./format.js";
+import { clock, cups, dayClock, dayPart, duration, number, partOfDay, plural, relTime, shortDate, titleCase } from "./format.js";
 
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -47,16 +47,6 @@ function stat(label, value, sub) {
     h("dd", {}, value, sub ? h("span", { class: "sub", text: ` ${sub}` }) : null));
 }
 
-function meter(label, percent, valueText, status) {
-  const clamped = Math.max(0, Math.min(100, percent ?? 0));
-  return h("div", { class: "meter", "data-status": status || "normal" },
-    h("div", { class: "meter-row" }, h("span", { text: label }), h("span", { text: valueText })),
-    h("div", {
-      class: "meter-track", role: "meter", "aria-label": label,
-      "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(clamped)),
-    }, h("div", { class: "meter-fill", style: `width:${clamped}%` })));
-}
-
 // --- Litter box ---
 
 // pylitterbot status codes -> reserved status classes (always shown with icon + label).
@@ -75,23 +65,8 @@ function litterStatus(box) {
   return ["critical", label];
 }
 
-function drawerStatus(box) {
-  if (box.waste_drawer_full || box.waste_drawer_state === "full") return "critical";
-  if (box.waste_drawer_percent >= 80) return "warning";
-  return "normal";
-}
-
 export function litterCard(box, drawer, catColors = {}) {
   const [status, label] = litterStatus(box);
-  const state = box.waste_drawer_state;
-  const drawerHero = state === "empty" ? "Empty" : state === "full" ? "Full" : `${number(box.waste_drawer_percent)}%`;
-  const emptiedLine = box.last_emptied_at
-    ? `Emptied ${relTime(box.last_emptied_at)} · ${plural(box.cycles_since_emptied ?? 0, "cycle")} since`
-    : "No empty recorded yet";
-  const usual = drawer?.average_days_between_empties
-    ? `every ~${number(drawer.average_days_between_empties, 1)} days`
-    : null;
-
   const notes = [];
   if (box.sleeping) notes.push(["neutral", "Sleep mode: automatic cycles paused"]);
   if (box.litter_level_state && box.litter_level_state !== "OPTIMAL") {
@@ -102,20 +77,105 @@ export function litterCard(box, drawer, catColors = {}) {
     h("div", { class: "card-head" },
       h("div", {}, h("h3", { class: "card-title", text: box.name }), h("p", { class: "card-sub", text: box.model })),
       pill(status, label)),
-    h("div", {},
-      h("div", { class: "hero" }, h("span", { class: "hero-value", text: drawerHero }),
-        h("span", { class: "hero-label", text: "waste drawer" })),
-      h("p", { class: "card-sub", text: emptiedLine })),
-    meter("Waste drawer", box.waste_drawer_percent, `${number(box.waste_drawer_percent)}%`, drawerStatus(box)),
     h("dl", { class: "stats" },
-      stat("Litter level", `${number(box.litter_level_percent)}%`, box.litter_level_state ? titleCase(box.litter_level_state) : null),
       stat("Last visit", box.last_cat || relTime(box.last_cat_detected_at),
         box.last_cat ? `${relTime(box.last_cat_detected_at)}, ${number(box.cat_weight_lbs, 2)} lb` : null),
       stat("Last clean cycle", relTime(box.last_clean_cycle_at)),
-      stat("Drawer usually emptied", usual || "—"),
+      stat("Litter level", `${number(box.litter_level_percent)}%`, box.litter_level_state ? titleCase(box.litter_level_state) : null),
+      stat("Drawer emptied", drawer?.average_days_between_empties
+        ? `every ~${number(drawer.average_days_between_empties, 1)} days` : "—"),
       stat("Lifetime cycles", number(box.lifetime_cycles))),
     box.cats?.length ? catList(box.cats, catColors) : null,
     notes.length ? notesList(notes) : null);
+}
+
+// --- Waste drawer: the lead item on the page ---
+
+function drawerDue(box, now = Date.now()) {
+  const pct = box.waste_drawer_percent ?? 0;
+  const due = box.drawer_needs_emptying_at ? new Date(box.drawer_needs_emptying_at).getTime() : null;
+  if (box.waste_drawer_full || box.waste_drawer_state === "full" || pct >= 100) return ["critical", "Full: empty it now"];
+  if ((due && due <= now) || (box.drawer_usual_empty_percent && pct >= box.drawer_usual_empty_percent)) {
+    return ["warning", "Due: empty it today"];
+  }
+  if (box.waste_drawer_state === "empty") return ["good", "Empty"];
+  return ["good", "Filling"];
+}
+
+export function drawerFeature(box) {
+  const pct = box.waste_drawer_percent ?? 0;
+  const usual = box.drawer_usual_empty_percent;
+  const [status, label] = drawerDue(box);
+  const scaleMax = Math.max(100, Math.ceil(pct / 10) * 10);
+  const at = (value) => `${(Math.min(value, scaleMax) / scaleMax) * 100}%`;
+
+  // The gauge: a ruler with the fill, a mark at the usual emptying level, and "full".
+  const fill = h("div", { class: "gauge-fill", "data-status": status });
+  fill.style.width = at(pct);
+  const marks = [];
+  if (usual) {
+    const usualMark = h("div", { class: "gauge-mark gauge-usual" },
+      h("span", { class: "gauge-mark-label", text: `usually emptied ${number(usual)}%` }));
+    usualMark.style.left = at(usual);
+    marks.push(usualMark);
+  }
+  if (scaleMax > 100) {
+    const fullMark = h("div", { class: "gauge-mark gauge-full" });
+    fullMark.style.left = at(100);
+    marks.push(fullMark);
+  }
+  const ticks = h("div", { class: "gauge-scale", "aria-hidden": "true" },
+    [0, 25, 50, 75, 100].filter((v) => v <= scaleMax).map((v) => {
+      const t = h("span", { class: v === 100 ? "tick-full" : null, text: v === 100 ? "100 full" : `${v}` });
+      t.style.left = at(v);
+      return t;
+    }));
+  const gauge = h("div", { class: "gauge" },
+    h("div", {
+      class: "gauge-track", role: "meter", "aria-label": "Waste drawer fill",
+      "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(pct)),
+      "aria-valuetext": `${number(pct)}% full`,
+    }, fill, ...marks),
+    ticks);
+
+  // The forecast, in words.
+  const forecast = [];
+  if (box.drawer_needs_emptying_at && status === "good") {
+    forecast.push(
+      h("p", { class: "kicker", text: "Empty it by" }),
+      h("p", { class: "forecast-date", text: shortDate(box.drawer_needs_emptying_at) }),
+      h("p", { class: "forecast-line",
+        text: `${partOfDay(box.drawer_needs_emptying_at)}, ${relTime(box.drawer_needs_emptying_at)}, when it reaches about ${number(usual)}%.` }),
+      h("p", { class: "forecast-line", text: `Full around ${dayPart(box.drawer_full_at)}.` }),
+    );
+  } else if (status !== "good") {
+    forecast.push(
+      h("p", { class: "kicker", text: "Now" }),
+      h("p", { class: "forecast-date", text: label }),
+      box.drawer_full_at && status === "warning"
+        ? h("p", { class: "forecast-line", text: `Full around ${dayPart(box.drawer_full_at)}.` })
+        : null,
+    );
+  } else {
+    forecast.push(
+      h("p", { class: "kicker", text: "Forecast" }),
+      h("p", { class: "forecast-line", text: "Needs a couple of emptying cycles of history to estimate." }),
+    );
+  }
+  const facts = [
+    box.last_emptied_at ? `Emptied ${relTime(box.last_emptied_at)}` : null,
+    box.last_emptied_at ? plural(box.cycles_since_emptied ?? 0, "cycle") + " since" : null,
+    box.drawer_fill_rate_per_day ? `Fills ~${number(box.drawer_fill_rate_per_day)}% a day` : null,
+  ].filter(Boolean);
+
+  return h("article", { class: "feature", "aria-label": "Waste drawer", "data-status": status },
+    h("div", { class: "feature-figure" },
+      h("p", { class: "kicker", text: `Waste drawer · ${box.name}` }),
+      h("p", { class: "feature-value" }, h("span", { text: number(pct) }), h("span", { class: "feature-unit", text: "%" })),
+      h("p", { class: "feature-state" }, pill(status, label))),
+    h("div", { class: "feature-gauge" }, gauge,
+      h("p", { class: "feature-facts", text: facts.join("  ·  ") })),
+    h("div", { class: "feature-forecast" }, forecast));
 }
 
 /** "● Zora 5.4 lb  ● Maui 14.7 lb": the cats Whisker tells apart by weight. */

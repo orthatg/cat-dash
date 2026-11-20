@@ -1,7 +1,7 @@
 import { api, subscribe } from "./api.js";
-import { errorsBanner, feederCard, litterCard } from "./cards.js";
+import { drawerFeature, errorsBanner, feederCard, litterCard } from "./cards.js";
 import { chartCard, columnChart, lineChart } from "./charts.js";
-import { longDateTime, number, parseDay, shortDay } from "./format.js";
+import { dayPart, longDateTime, number, parseDay, shortDay } from "./format.js";
 
 // Identity colors (fixed slot per entity, never by rank). A cat keeps the same color in
 // both sections; a feeder takes its cat's color when it serves one cat.
@@ -69,7 +69,7 @@ function renderCards() {
   const boxes = status.litter_boxes.slice().sort(byName);
   const feeders = status.feeders.slice().sort(byName);
   $("litter-cards").replaceChildren(...(boxes.length
-    ? boxes.map((box) => litterCard(box, state.drawer[box.device_id], state.catColors))
+    ? boxes.flatMap((box) => [drawerFeature(box), litterCard(box, state.drawer[box.device_id], state.catColors)])
     : [emptyNote("No litter box connected.")]));
   $("food-cards").replaceChildren(...(feeders.length
     ? feeders.map((feeder) => feederCard(feeder, state.feederCats[feeder.device_id], state.catColors))
@@ -239,12 +239,33 @@ function litterCharts({ box, daily, drawer, cats }, ctx, multipleBoxes) {
   const every = drawer.average_days_between_empties
     ? `Emptied every ~${number(drawer.average_days_between_empties, 1)} days (~${number(drawer.average_cycles_between_empties)} cycles)`
     : "No empties recorded in this range";
+  // Forecast: dashed line from now to "empty it by" and "full", if within two weeks.
+  const series = [{ name: "Drawer", color: LITTER, points: levels }];
+  let chartDomain = domain;
+  const fullAt = box.drawer_full_at ? new Date(box.drawer_full_at) : null;
+  if (fullAt && box.drawer_needs_emptying_at && fullAt - Date.now() < 14 * 86_400_000) {
+    const now = new Date();
+    const dueAt = new Date(box.drawer_needs_emptying_at);
+    series.push({
+      name: "Forecast", color: LITTER, dashed: true,
+      points: [
+        { t: now, v: box.waste_drawer_percent },
+        ...(dueAt > now ? [{ t: dueAt, v: box.drawer_usual_empty_percent, extra: "empty by" }] : []),
+        ...(fullAt > now ? [{ t: fullAt, v: 100, extra: "full" }] : []),
+      ],
+    });
+    chartDomain = [domain[0], new Date(Math.max(domain[1], fullAt) + 6 * 3_600_000)];
+    if (dueAt > now) {
+      empties.push({ t: dueAt, v: box.drawer_usual_empty_percent, color: LITTER,
+        note: `Forecast: empty it by ${dayPart(dueAt)} (~${number(box.drawer_usual_empty_percent)}%)` });
+    }
+  }
   cards.push(chartCard({
     title: `${prefix}Waste drawer level`,
-    sub: `${every} · dots mark empties`,
+    sub: `${every} · dots mark empties · dashed line is the forecast`,
     draw: (el) => lineChart(el, {
-      series: [{ name: "Drawer", color: LITTER, points: levels }],
-      markers: empties, domain, yMin: 0, yMax: 100, ariaLabel: "Waste drawer level",
+      series,
+      markers: empties, domain: chartDomain, yMin: 0, yMax: 100, ariaLabel: "Waste drawer level",
       format: (v) => `${number(v)}%`, titleFormat: longDateTime, tolerance: 45 * 60_000,
     }),
     table: {

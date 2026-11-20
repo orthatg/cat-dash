@@ -41,6 +41,10 @@ Verified against a live LR4 on 2026-11-20. An anonymized response is in
   drops its value, so the GraphQL activity query is sent directly) and records an empty
   when the level falls to 5% or less from at least 30% (`backend/src/cat_dash/drawer.py`).
   Live: 6 empties in 30 days, about every 5.3 days or 52 cycles. Dips like 92→68 are ignored.
+- **Forecast:** each pair of consecutive empties is one fill cycle (0% to the level before
+  emptying, over that many days). The median rate of the last 5 cycles (live: 18.8 %/day)
+  and the median emptying level (live: 82%) give "empty it by" and "full (100%)" times
+  from the current reading (`fill_model` / `forecast` in `drawer.py`).
 - **Which cat:** Whisker pet profiles (`Account.load_pets`) give each cat's weight
   (Zora about 5.4 lb, Maui about 14.7 lb), but per-pet weight history only reaches back
   about a week. Cat Dash assigns every box weight reading to the nearest profile

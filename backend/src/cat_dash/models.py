@@ -41,6 +41,11 @@ class LitterBoxStatus(BaseModel):
     # Inferred from the drawer level falling to ~0 (see cat_dash.drawer).
     last_emptied_at: datetime | None = None
     cycles_since_emptied: int | None = None
+    # Forecast from the drawer's own fill history (see cat_dash.drawer.fill_model).
+    drawer_fill_rate_per_day: float | None = None
+    drawer_usual_empty_percent: float | None = None
+    drawer_needs_emptying_at: datetime | None = None
+    drawer_full_at: datetime | None = None
     updated_at: datetime
 
 

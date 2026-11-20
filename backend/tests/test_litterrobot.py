@@ -155,3 +155,55 @@ async def test_sync_tracks_drawer_empties(tmp_path):
         "%Y-%m-%d %H:%M:%S"
     )
     assert len(await store.drawer_empties("abc123unitid")) == 1  # no duplicates
+
+
+def test_fill_model_and_forecast_from_live_empties():
+    from cat_dash.drawer import fill_model, forecast
+
+    # The six empties seen on the live robot (Oct 25 - Nov 20, 2026).
+    empties = [
+        (datetime(2026, 10, 25, 3, 7, 53, tzinfo=UTC), 87.0),
+        (datetime(2026, 10, 28, 12, 25, 23, tzinfo=UTC), 65.0),
+        (datetime(2026, 11, 5, 23, 49, 3, tzinfo=UTC), 82.0),
+        (datetime(2026, 11, 10, 14, 54, 56, tzinfo=UTC), 87.0),
+        (datetime(2026, 11, 15, 20, 25, 39, tzinfo=UTC), 70.0),
+        (datetime(2026, 11, 20, 15, 2, 32, tzinfo=UTC), 107.0),
+    ]
+    model = fill_model(empties)
+    assert model.cycles_used == 5
+    assert round(model.rate_percent_per_day, 1) == 18.8
+    assert model.usual_empty_percent == 82.0
+
+    now = datetime(2026, 11, 20, 23, 0, tzinfo=UTC)
+    outlook = forecast(model, 6.0, now)
+    assert round((outlook.needs_emptying_at - now).total_seconds() / 86400, 1) == 4.0
+    assert round((outlook.full_at - now).total_seconds() / 86400, 1) == 5.0
+    # Already past full: due now.
+    assert forecast(model, 120.0, now).full_at == now
+
+
+def test_fill_model_needs_two_empties():
+    from cat_dash.drawer import fill_model
+
+    assert fill_model([]) is None
+    assert fill_model([(datetime(2026, 11, 1, tzinfo=UTC), 80.0)]) is None
+
+
+async def test_status_carries_drawer_forecast(tmp_path):
+    t = datetime.now(UTC).replace(microsecond=0) - timedelta(days=10)
+    entries = [
+        raw(t, "DFILevelPercent", "60"),
+        raw(t + timedelta(days=1), "DFILevelPercent", "0"),  # emptied
+        raw(t + timedelta(days=5), "DFILevelPercent", "80"),
+        raw(t + timedelta(days=5, hours=1), "DFILevelPercent", "0"),  # emptied: 80% in 4 days
+    ]
+    robot = HistoryRobot(real_robot(), entries)  # live level in the fixture: 0%
+    hub, store = Hub(), Store(":memory:")
+    adapter = LitterRobotAdapter(hub, store, "u", "p", TokenFile(tmp_path / "t.json"))
+    adapter._account = SimpleNamespace(get_robots=lambda _cls: [robot])
+    await adapter.sync_history()
+    status = hub.litter_box("abc123unitid")
+    assert status.drawer_fill_rate_per_day == 19.8  # 80% over 4.04 days
+    assert status.drawer_usual_empty_percent == 70.0  # median of 60 and 80
+    days_to_full = (status.drawer_full_at - status.updated_at).total_seconds() / 86400
+    assert round(days_to_full, 1) == 5.1
