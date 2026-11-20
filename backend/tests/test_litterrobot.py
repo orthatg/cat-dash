@@ -30,8 +30,8 @@ def test_status_from_real_robot():
     assert status.device_id == "abc123unitid" and status.serial == "LR4C000001"
     assert status.online and status.powered_on and not status.sleeping
     assert (status.status_code, status.status_text) == ("RDY", "Ready")
-    # DFILevelPercent reads 0 while isDFIPartialFull is true: the state is what to show.
-    assert status.waste_drawer_percent == 0.0 and status.waste_drawer_state == "partial"
+    # The Whisker app showed "Empty" for this response, even though isDFIPartialFull is true.
+    assert status.waste_drawer_percent == 0.0 and status.waste_drawer_state == "empty"
     assert status.waste_drawer_full is False
     assert (status.litter_level_percent, status.litter_level_state) == (90.0, "OPTIMAL")
     assert status.cat_weight_lbs == 5.38
@@ -43,6 +43,12 @@ def test_drawer_full_state():
     data = json.loads(FIXTURE.read_text()) | {"isDFIFull": True}
     status = status_from_robot(LitterRobot4(data=data, account=None), now=NOW)
     assert status.waste_drawer_full and status.waste_drawer_state == "full"
+
+
+def test_drawer_partial_state():
+    data = json.loads(FIXTURE.read_text()) | {"DFILevelPercent": 45}
+    status = status_from_robot(LitterRobot4(data=data, account=None), now=NOW)
+    assert (status.waste_drawer_percent, status.waste_drawer_state) == (45.0, "partial")
 
 
 def test_zero_weight_is_none():

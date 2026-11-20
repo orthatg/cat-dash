@@ -32,9 +32,10 @@ Verified against a live LR4 on 2026-11-20. An anonymized response is in
 
 - `pylitterbot`'s `cycle_count` is the **lifetime** odometer (`odometerCleanCycles`).
   Cycles since the drawer was emptied is the raw `DFINumberOfCycles`.
-- `DFILevelPercent` read 0 while `isDFIPartialFull` was true and the robot had logged
-  "Drawer Full" that day. Cat Dash shows `waste_drawer_state` (full / partial / ok) as
-  the primary signal.
+- Drawer: `DFILevelPercent` was 0 and the Whisker app showed "Empty" (no percentage),
+  while `isDFIPartialFull` was true. Cat Dash follows the percentage, like the app:
+  `waste_drawer_state` is empty (0) / partial / full (`isDFIFull` or 100). The
+  `isDFIPartialFull` flag is ignored.
 - `lastSeen` was 3 days stale on an online, active robot, so it was dropped.
 - History volume is about 60 entries a day (about 1,850 for 30 days). The backfill uses
   limit 5000. Activity entries for `DFILevelPercent` carry no value in `pylitterbot`.

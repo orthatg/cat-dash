@@ -18,7 +18,7 @@ class LitterBoxStatus(BaseModel):
     status_text: str | None
     waste_drawer_percent: float
     waste_drawer_full: bool
-    # "full" / "partial" / "ok": trust this over waste_drawer_percent, which can read 0.
+    # "empty" / "partial" / "full", matching the Whisker app.
     waste_drawer_state: str | None = None
     litter_level_percent: float | None
     litter_level_state: str | None = None

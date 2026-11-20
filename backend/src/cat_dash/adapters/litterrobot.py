@@ -47,14 +47,16 @@ AUTH_RETRY = timedelta(minutes=30)
 SYNC_DELAY = timedelta(seconds=20)
 
 
-def _drawer_state(data: dict, full: bool) -> str | None:
-    if full:
+def _drawer_state(percent: float, full: bool) -> str:
+    """Mirror the Whisker app: it showed "Empty" (no %) for DFILevelPercent 0.
+
+    isDFIPartialFull is NOT used: it was true while the app said Empty.
+    """
+    if full or percent >= 100:
         return "full"
-    if data.get("isDFIPartialFull") is True:
-        return "partial"
-    if "isDFIPartialFull" in data:
-        return "ok"
-    return None
+    if percent <= 0:
+        return "empty"
+    return "partial"
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -69,13 +71,14 @@ def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatu
 
     Checked against a live LR4 on 2026-11-20: pylitterbot's `cycle_count` is the
     lifetime odometer (odometerCleanCycles); cycles since the drawer was emptied is
-    the raw DFINumberOfCycles. DFILevelPercent can read 0 while isDFIPartialFull is
-    true, so `waste_drawer_state` is the more trustworthy signal.
+    the raw DFINumberOfCycles. The drawer state follows DFILevelPercent, which matched
+    the Whisker app ("Empty" at 0); isDFIPartialFull did not.
     """
     data = robot.to_dict() if hasattr(robot, "to_dict") else {}
     status = robot.status
     weight = robot.pet_weight
     full = robot.is_waste_drawer_full
+    percent = float(robot.waste_drawer_level)
     return LitterBoxStatus(
         device_id=str(robot.id),
         name=robot.name,
@@ -85,9 +88,9 @@ def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatu
         powered_on=robot.is_on,
         status_code=robot.status_code,
         status_text=getattr(status, "text", None),
-        waste_drawer_percent=float(robot.waste_drawer_level),
+        waste_drawer_percent=percent,
         waste_drawer_full=full,
-        waste_drawer_state=_drawer_state(data, full),
+        waste_drawer_state=_drawer_state(percent, full),
         litter_level_percent=float(robot.litter_level) if robot.litter_level is not None else None,
         litter_level_state=data.get("litterLevelState"),
         cat_weight_lbs=float(weight) if weight else None,
