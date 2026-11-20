@@ -101,3 +101,25 @@ async def test_drawer_endpoint(store):
     assert body["average_cycles_between_empties"] == 3.0
     assert [e["clean_cycles"] for e in body["emptied"]] == [None, 3]
     assert len(body["levels"]) == 2
+
+
+async def test_litter_daily_uses_median_weight(store):
+    t = datetime(2026, 11, 7, 15, tzinfo=UTC)
+    await store.add_litter_events(
+        [
+            LitterEvent(
+                device_id="box",
+                timestamp=t + timedelta(minutes=i),
+                code=None,
+                text=f"Pet Weight Recorded: {w} lbs",
+                cat_weight_lbs=w,
+            )
+            for i, w in enumerate([5.4, 5.43, 15.99, 5.5])
+        ]
+    )
+    app = create_app(Settings(_env_file=None, timezone="UTC"), store=store, hub=Hub(), adapters=[])
+    with TestClient(app) as client:
+        rows = client.get("/api/litterbox/box/daily?days=365").json()
+    assert rows == [
+        {"date": "2026-11-07", "clean_cycles": 0, "cat_weight_lbs": 5.46, "weight_readings": 4}
+    ]

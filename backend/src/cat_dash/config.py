@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     litterrobot_history_poll_seconds: int = 900
 
     data_dir: Path = Path("data")
+    # The dashboard: <repo>/frontend (this file is <repo>/backend/src/cat_dash/config.py).
+    frontend_dir: Path = Path(__file__).resolve().parents[3] / "frontend"
     host: str = "127.0.0.1"
     port: int = 8000
 

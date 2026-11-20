@@ -18,6 +18,7 @@ the litter box and the automatic feeder.
 ## Layout
 
 - `backend/`: Python service (see [backend/README.md](backend/README.md))
+- `frontend/`: the dashboard (plain HTML/CSS/JS modules, no build step), served by the backend at `/`
 - `docs/integration-plan.md`: how each device's data is accessed, and what's still unverified
 
 ## Configuration

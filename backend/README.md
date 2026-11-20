@@ -33,7 +33,7 @@ Redacted raw dumps land in `data/probe/` (git-ignored).
 ## Run
 
 ```bash
-uv run cat-dash           # http://127.0.0.1:8000
+uv run cat-dash           # dashboard at http://127.0.0.1:8000, API docs at /docs
 uv run pytest             # tests (no network)
 ```
 

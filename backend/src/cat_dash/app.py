@@ -9,11 +9,13 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from statistics import median
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from .adapters.litterrobot import LitterRobotAdapter, TokenFile
 from .adapters.petlibro import PetlibroAdapter
@@ -116,10 +118,6 @@ def create_app(
     def local_day(ts: datetime) -> str:
         return ts.astimezone(tz).date().isoformat()
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> RedirectResponse:
-        return RedirectResponse("/docs")
-
     @app.get("/api/health")
     async def health() -> dict:
         return {"ok": True}
@@ -159,17 +157,26 @@ def create_app(
 
     @app.get("/api/litterbox/{device_id}/daily")
     async def litter_daily(device_id: str, days: int = Query(30, ge=1, le=365)) -> list[dict]:
-        """Clean cycles per local day, plus the last cat weight recorded that day."""
+        """Clean cycles per local day, plus the median cat weight that day.
+
+        Median, not last: a box can log occasional readings far off the usual weight
+        (e.g. ~15 lb among ~5.4 lb), which would otherwise become the day's value.
+        """
         cycles: dict[str, int] = defaultdict(int)
-        weights: dict[str, float] = {}
+        weights: dict[str, list[float]] = defaultdict(list)
         for event in await store.litter_events(device_id, since(days)):
             day = local_day(event.timestamp)
             if event.code == CLEAN_CYCLE_COMPLETE:
                 cycles[day] += 1
             if event.cat_weight_lbs is not None:
-                weights[day] = event.cat_weight_lbs
+                weights[day].append(event.cat_weight_lbs)
         return [
-            {"date": day, "clean_cycles": cycles.get(day, 0), "cat_weight_lbs": weights.get(day)}
+            {
+                "date": day,
+                "clean_cycles": cycles.get(day, 0),
+                "cat_weight_lbs": round(median(weights[day]), 2) if weights.get(day) else None,
+                "weight_readings": len(weights.get(day, [])),
+            }
             for day in sorted(set(cycles) | set(weights))
         ]
 
@@ -283,5 +290,11 @@ def create_app(
             {"date": day, "pet_name": pet, "visits": v[0], "eating_seconds": v[1]}
             for (day, pet), v in sorted(totals.items())
         ]
+
+    # The dashboard (static files, no build step). Mounted last so /api/* wins.
+    if settings.frontend_dir.is_dir():
+        app.mount("/", StaticFiles(directory=settings.frontend_dir, html=True), name="frontend")
+    else:
+        _LOGGER.warning("Dashboard folder not found: %s", settings.frontend_dir)
 
     return app
