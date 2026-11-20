@@ -183,3 +183,14 @@ async def test_cats_daily_endpoint(store):
         {"date": "2026-11-07", "cat": "Maui", "visits": 2, "weight_lbs": 15.25},
         {"date": "2026-11-07", "cat": "Zora", "visits": 3, "weight_lbs": 5.43},
     ]
+
+
+def test_dashboard_served_with_no_cache(store, tmp_path):
+    (tmp_path / "index.html").write_text("<!doctype html><title>Cat Dash</title>")
+    settings = Settings(_env_file=None, frontend_dir=tmp_path)
+    app = create_app(settings, store=store, hub=Hub(), adapters=[])
+    with TestClient(app) as client:
+        page = client.get("/")
+        assert page.status_code == 200 and "Cat Dash" in page.text
+        assert page.headers["cache-control"] == "no-cache"
+        assert "cache-control" not in client.get("/api/health").headers

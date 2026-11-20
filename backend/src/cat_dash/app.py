@@ -314,6 +314,15 @@ def create_app(
             for (day, pet), v in sorted(totals.items())
         ]
 
+    @app.middleware("http")
+    async def revalidate_dashboard(request: Request, call_next):
+        # Dashboard files change without a build step: make browsers re-check them
+        # (cheap 304s via ETag) instead of reusing a stale copy.
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
     # The dashboard (static files, no build step). Mounted last so /api/* wins.
     if settings.frontend_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.frontend_dir, html=True), name="frontend")
