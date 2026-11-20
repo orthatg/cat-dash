@@ -16,9 +16,10 @@ from ..store import Store
 _LOGGER = logging.getLogger(__name__)
 NAME = "petlibro"
 DEVICE_LIST_INTERVAL = timedelta(hours=1)
-# Feed history window per poll. The API caps a call at 25 records, so keep it short;
-# frequent polling plus de-duplicated storage builds the long history.
-RECORD_WINDOW = timedelta(days=3)
+# First run pulls this much history (feeds + cat visits); later polls only fetch
+# records since the last one seen, with a small overlap (duplicates are ignored).
+BACKFILL = timedelta(days=30)
+OVERLAP = timedelta(minutes=10)
 
 
 class PetlibroAdapter:
@@ -87,11 +88,14 @@ class PetlibroAdapter:
 
     async def _poll_device(self, device: dict, now: datetime) -> None:
         serial = str(device["deviceSn"])
+        cursor_key = f"petlibro:{serial}:records_until"
+        cursor = await self._store.get_state(cursor_key)
+        since = datetime.fromisoformat(cursor) - OVERLAP if cursor else now - BACKFILL
         calls = {
             "real_info": self._client.real_info(serial),
             "data_real_info": self._client.data_real_info(serial),
             "grain_status": self._client.grain_status(serial),
-            "work_records": self._client.work_records(serial, now - RECORD_WINDOW, now),
+            "records": self._client.records_between(serial, since, now),
             "plans": self._client.feeding_plans(serial),
         }
         results = await asyncio.gather(*calls.values(), return_exceptions=True)
@@ -106,19 +110,32 @@ class PetlibroAdapter:
         if data["real_info"] is None:
             raise RuntimeError(f"Petlibro realInfo unavailable for {serial}")
 
+        records = data["records"]
+        if records is not None:
+            await self._store.add_feed_events(parse.feed_events(serial, records))
+            await self._store.add_pet_visits(parse.pet_visits(serial, records))
+            newest = max(
+                (int(r["recordTime"]) for r in records if r.get("recordTime")), default=None
+            )
+            if newest:
+                await self._store.set_state(
+                    cursor_key, datetime.fromtimestamp(newest / 1000, tz=UTC).isoformat()
+                )
+            elif not cursor:
+                await self._store.set_state(cursor_key, now.isoformat())
+
         status = parse.feeder_status(
             device,
             real_info=data["real_info"] or {},
             data_real_info=data["data_real_info"] or {},
             grain_status=data["grain_status"] or {},
-            work_records=data["work_records"],
+            records=records or [],
             plans=data["plans"],
             now=now,
             timezone=self._timezone,
+            last_feed=await self._store.latest_feed_event(serial),
         )
         self._hub.update_feeder(status)
-        if data["work_records"] is not None:
-            await self._store.add_feed_events(parse.feed_events(serial, data["work_records"]))
 
     def _save_token(self) -> None:
         if self._token_path and self._client.token:

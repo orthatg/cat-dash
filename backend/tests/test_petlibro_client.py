@@ -72,3 +72,35 @@ async def test_other_error_code_raises(client):
     )
     with pytest.raises(PetlibroError, match="5000"):
         await client.list_devices()
+
+
+@respx.mock
+async def test_records_between_pages_back_by_end_time(client, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from cat_dash.petlibro import client as client_mod
+
+    monkeypatch.setattr(client_mod, "PAGE_SIZE", 2)
+    client.token = "abc"
+    start = datetime(2026, 11, 1, tzinfo=UTC)
+    end = datetime(2026, 11, 20, tzinfo=UTC)
+
+    def day(*recs):
+        return [{"recordTime": "2026/11/19", "workRecords": list(recs)}]
+
+    def rec(i, ts):
+        return {"id": str(i), "type": "DETECTION_EVENT", "recordTime": ts}
+
+    t0 = int((end - timedelta(hours=1)).timestamp() * 1000)
+    route = respx.post(f"{BASE}/device/workRecord/list").mock(
+        side_effect=[
+            ok(day(rec(1, t0), rec(2, t0 - 1000))),
+            ok(day(rec(3, t0 - 2000), rec(4, t0 - 3000))),
+            ok(day(rec(5, t0 - 4000))),  # short page -> stop
+        ]
+    )
+    records = await client.records_between("SN1", start, end)
+    assert [r["id"] for r in records] == ["1", "2", "3", "4", "5"]
+    second_body = json.loads(route.calls[1].request.content)
+    assert second_body["endTime"] == t0 - 1000 - 1
+    assert second_body["size"] == 2

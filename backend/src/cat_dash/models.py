@@ -38,11 +38,14 @@ class FeederStatus(BaseModel):
     today_dispensed_portions: int | None
     today_feed_count: int | None
     today_eat_count: int | None
+    today_eat_seconds: int | None = None
     last_feed_at: datetime | None
     last_feed_portions: int | None
     next_feed_at: datetime | None
     next_feed_portions: int | None
+    # Negative means overdue by that many days.
     desiccant_days_left: float | None
+    desiccant_state: str | None = None
     problems: list[str] = Field(default_factory=list)
     updated_at: datetime
 
@@ -59,6 +62,17 @@ class FeedEvent(BaseModel):
     device_id: str
     timestamp: datetime
     portions: int
+
+
+class PetVisit(BaseModel):
+    """A cat identified by RFID eating at a feeder."""
+
+    device_id: str
+    timestamp: datetime
+    pet_id: int | None
+    pet_name: str | None
+    seconds: int | None
+    event_type: str | None = None
 
 
 class DashboardStatus(BaseModel):

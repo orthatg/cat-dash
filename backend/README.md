@@ -49,6 +49,8 @@ uv run pytest             # tests (no network)
 | `GET /api/litterbox/{id}/insight` | Whisker's own 30-day cycle summary |
 | `GET /api/feeder/{id}/events?days=7` | Each feed (portions; 1 portion = 1/12 cup) |
 | `GET /api/feeder/{id}/daily?days=30` | Portions and feeds per day |
+| `GET /api/feeder/{id}/visits?days=7` | Each RFID-identified cat visit (cat, time, seconds eating) |
+| `GET /api/feeder/{id}/visits/daily?days=30` | Visits and eating seconds per cat per day |
 
 ## How data arrives
 

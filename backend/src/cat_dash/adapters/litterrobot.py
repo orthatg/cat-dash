@@ -21,6 +21,7 @@ from pylitterbot import Account, LitterRobot4
 from pylitterbot.activity import Activity, Insight
 from pylitterbot.enums import LitterBoxStatus as LRStatus
 from pylitterbot.event import EVENT_UPDATE
+from pylitterbot.exceptions import LitterRobotLoginException
 
 from ..hub import Hub
 from ..models import LitterBoxStatus, LitterEvent
@@ -36,6 +37,7 @@ BACKFILL = timedelta(days=30)
 REFRESH_INTERVAL = timedelta(minutes=5)
 # At most one drawer/litter snapshot per robot in this window (unless values change).
 SNAPSHOT_MIN_INTERVAL = timedelta(minutes=10)
+AUTH_RETRY = timedelta(minutes=30)
 
 
 def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatus:
@@ -158,6 +160,13 @@ class LitterRobotAdapter:
                 await self._maintain()
             except asyncio.CancelledError:
                 raise
+            except LitterRobotLoginException as err:
+                # Bad credentials won't fix themselves, and repeated failed logins can
+                # lock the Whisker account: wait a long time between attempts.
+                _LOGGER.error("Litter-Robot login rejected; retrying in 30 min: %s", err)
+                self._hub.set_error(NAME, f"Login failed: {err}")
+                await self._teardown_account()
+                await asyncio.sleep(AUTH_RETRY.total_seconds())
             except Exception as err:  # noqa: BLE001 - keep the service alive
                 _LOGGER.warning("Litter-Robot error, retrying in %ss: %s", delay, err)
                 self._hub.set_error(NAME, str(err) or type(err).__name__)

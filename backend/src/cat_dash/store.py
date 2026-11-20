@@ -1,4 +1,4 @@
-"""SQLite history store (litter events, drawer snapshots, feed events)."""
+"""SQLite history store (litter events, drawer snapshots, feeds, pet visits)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .models import FeedEvent, LitterBoxStatus, LitterEvent
+from .models import FeedEvent, LitterBoxStatus, LitterEvent, PetVisit
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS litter_events (
@@ -32,6 +32,20 @@ CREATE TABLE IF NOT EXISTS feed_events (
     ts TEXT NOT NULL,
     portions INTEGER NOT NULL,
     PRIMARY KEY (device_id, ts)
+);
+CREATE TABLE IF NOT EXISTS pet_visits (
+    device_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    pet_key TEXT NOT NULL,
+    pet_id INTEGER,
+    pet_name TEXT,
+    seconds INTEGER,
+    event_type TEXT,
+    PRIMARY KEY (device_id, ts, pet_key)
+);
+CREATE TABLE IF NOT EXISTS sync_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -161,3 +175,75 @@ class Store:
             FeedEvent(device_id=r[0], timestamp=_dt(r[1]), portions=r[2])
             for r in await self._run(read)
         ]
+
+    async def latest_feed_event(self, device_id: str) -> FeedEvent | None:
+        def read():
+            return self._conn.execute(
+                "SELECT device_id, ts, portions FROM feed_events WHERE device_id = ?"
+                " ORDER BY ts DESC LIMIT 1",
+                (device_id,),
+            ).fetchone()
+
+        row = await self._run(read)
+        return FeedEvent(device_id=row[0], timestamp=_dt(row[1]), portions=row[2]) if row else None
+
+    # --- pet visits (RFID eating sessions) ---
+    async def add_pet_visits(self, visits: Iterable[PetVisit]) -> int:
+        rows = [
+            (
+                v.device_id,
+                _ts(v.timestamp),
+                str(v.pet_id if v.pet_id is not None else v.pet_name or ""),
+                v.pet_id,
+                v.pet_name,
+                v.seconds,
+                v.event_type,
+            )
+            for v in visits
+        ]
+
+        def write() -> int:
+            with self._conn:
+                cur = self._conn.executemany(
+                    "INSERT OR IGNORE INTO pet_visits VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+                )
+            return cur.rowcount
+
+        return await self._run(write)
+
+    async def pet_visits(self, device_id: str, since: datetime) -> list[PetVisit]:
+        def read():
+            return self._conn.execute(
+                "SELECT device_id, ts, pet_id, pet_name, seconds, event_type FROM pet_visits"
+                " WHERE device_id = ? AND ts >= ? ORDER BY ts",
+                (device_id, _ts(since)),
+            ).fetchall()
+
+        return [
+            PetVisit(
+                device_id=r[0],
+                timestamp=_dt(r[1]),
+                pet_id=r[2],
+                pet_name=r[3],
+                seconds=r[4],
+                event_type=r[5],
+            )
+            for r in await self._run(read)
+        ]
+
+    # --- small key/value state (sync cursors) ---
+    async def get_state(self, key: str) -> str | None:
+        def read():
+            row = self._conn.execute(
+                "SELECT value FROM sync_state WHERE key = ?", (key,)
+            ).fetchone()
+            return row[0] if row else None
+
+        return await self._run(read)
+
+    async def set_state(self, key: str, value: str) -> None:
+        def write() -> None:
+            with self._conn:
+                self._conn.execute("INSERT OR REPLACE INTO sync_state VALUES (?, ?)", (key, value))
+
+        await self._run(write)

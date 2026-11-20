@@ -1,0 +1,11 @@
+{
+ "todayFeedingQuantities": [
+  3,
+  1
+ ],
+ "todayFeedingQuantity": 4,
+ "todayFeedingTimes": 2,
+ "todayEatingTimes": 11,
+ "eatingTime": "12'31''",
+ "petEatingTime": 751
+}

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from redact import dump
 
 from cat_dash.config import Settings
 from cat_dash.petlibro import PetlibroClient, PetlibroError
-from cat_dash.petlibro.parse import feeder_status
+from cat_dash.petlibro.parse import feed_events, feeder_status, pet_visits
 
 OUT = Path("data/probe/petlibro")
 
@@ -59,15 +60,23 @@ async def main() -> int:
             for name, call in calls.items():
                 try:
                     results[name] = await call
-                    dump(OUT / "device", name, results[name])
+                    dump(OUT / str(serial), name, results[name])
                 except PetlibroError as err:
                     print(f"  {name}: FAILED {err}")
+            records = await client.records_between(serial, now - timedelta(days=7), now)
+            feeds, visits = feed_events(serial, records), pet_visits(serial, records)
+            print(
+                f"  last 7 days: {len(records)} records, {len(feeds)} feeds, "
+                f"{len(visits)} cat visits"
+            )
+            for name, count in Counter(v.pet_name for v in visits).items():
+                print(f"    {name}: {count} visits")
             status = feeder_status(
                 device,
                 real_info=results.get("real_info") or {},
                 data_real_info=results.get("data_real_info") or {},
                 grain_status=results.get("grain_status") or {},
-                work_records=results.get("work_records"),
+                records=records,
                 plans=results.get("feeding_plans"),
                 now=now,
                 timezone=settings.timezone,

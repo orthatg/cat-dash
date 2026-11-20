@@ -1,3 +1,5 @@
+import contextlib
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -35,7 +37,20 @@ async def test_petlibro_poll_updates_hub_and_store(tmp_path):
             [
                 {
                     "workRecords": [
-                        {"type": "GRAIN_OUTPUT_SUCCESS", "recordTime": now_ms, "actualGrainNum": 2}
+                        {
+                            "id": "f1",
+                            "type": "GRAIN_OUTPUT_SUCCESS",
+                            "recordTime": now_ms,
+                            "actualGrainNum": 2,
+                        },
+                        {
+                            "id": "v1",
+                            "type": "DETECTION_EVENT",
+                            "recordTime": now_ms - 5000,
+                            "petId": 7,
+                            "petName": "Mochi",
+                            "params": '{"seconds":"01m10s"}',
+                        },
                     ]
                 }
             ]
@@ -59,6 +74,17 @@ async def test_petlibro_poll_updates_hub_and_store(tmp_path):
     assert feeder.next_feed_at is None
     assert len(await store.feed_events("SN1", datetime(2000, 1, 1, tzinfo=UTC))) == 1
     assert (tmp_path / "token.txt").read_text() == "t"
+    visits = await store.pet_visits("SN1", datetime(2000, 1, 1, tzinfo=UTC))
+    assert [(v.pet_name, v.seconds) for v in visits] == [("Mochi", 70)]
+    cursor = await store.get_state("petlibro:SN1:records_until")
+    assert cursor and datetime.fromisoformat(cursor) == datetime.fromtimestamp(now_ms / 1000, UTC)
+
+    # Second poll starts from the cursor (minus overlap), not 30 days back.
+    await adapter.poll_once()
+    work = [c for c in respx.calls if c.request.url.path.endswith("/workRecord/list")]
+    start_ms = json.loads(work[-1].request.content)["startTime"]
+    assert now_ms - start_ms <= 11 * 60 * 1000
+    assert len(await store.pet_visits("SN1", datetime(2000, 1, 1, tzinfo=UTC))) == 1
 
 
 class FakeRobot(SimpleNamespace):
@@ -120,3 +146,36 @@ async def test_litterrobot_connect_subscribes_and_pushes(tmp_path):
     robot.callback()  # simulate a websocket push
     assert hub.litter_box("1").waste_drawer_percent == 55.0
     assert (tmp_path / "tok.json").exists()
+
+
+async def test_litterrobot_bad_login_backs_off_30_minutes(tmp_path, monkeypatch):
+    import asyncio
+
+    from pylitterbot.exceptions import LitterRobotLoginException
+
+    from cat_dash.adapters import litterrobot as lr
+
+    class BadAccount(FakeAccount):
+        async def connect(self, **kwargs):
+            raise LitterRobotLoginException("Incorrect username or password.")
+
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(lr.asyncio, "sleep", fake_sleep)
+    hub = Hub()
+    adapter = LitterRobotAdapter(
+        hub,
+        Store(":memory:"),
+        "u",
+        "p",
+        TokenFile(tmp_path / "t.json"),
+        account_factory=lambda **kw: BadAccount(None, **kw),
+    )
+    with contextlib.suppress(asyncio.CancelledError):
+        await adapter._run()
+    assert sleeps == [1800]
+    assert "Login failed" in hub.snapshot().errors["litterrobot"]

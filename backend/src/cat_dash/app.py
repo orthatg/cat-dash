@@ -19,7 +19,7 @@ from .adapters.litterrobot import LitterRobotAdapter, TokenFile
 from .adapters.petlibro import PetlibroAdapter
 from .config import Settings
 from .hub import Hub
-from .models import DashboardStatus, FeedEvent, LitterEvent
+from .models import DashboardStatus, FeedEvent, LitterEvent, PetVisit
 from .petlibro import PetlibroClient
 from .store import Store
 
@@ -205,6 +205,26 @@ def create_app(
             feeds[day] += 1
         return [
             {"date": day, "portions": portions[day], "feeds": feeds[day]} for day in sorted(feeds)
+        ]
+
+    @app.get("/api/feeder/{device_id}/visits", response_model=list[PetVisit])
+    async def feeder_visits(device_id: str, days: int = Query(7, ge=1, le=365)):
+        """Each RFID-identified eating visit (cat, time, seconds)."""
+        return await store.pet_visits(device_id, since(days))
+
+    @app.get("/api/feeder/{device_id}/visits/daily")
+    async def feeder_visits_daily(
+        device_id: str, days: int = Query(30, ge=1, le=365)
+    ) -> list[dict]:
+        """Per cat per local day: number of visits and total seconds eating."""
+        totals: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
+        for visit in await store.pet_visits(device_id, since(days)):
+            key = (local_day(visit.timestamp), visit.pet_name or "Unknown")
+            totals[key][0] += 1
+            totals[key][1] += visit.seconds or 0
+        return [
+            {"date": day, "pet_name": pet, "visits": v[0], "eating_seconds": v[1]}
+            for (day, pet), v in sorted(totals.items())
         ]
 
     return app

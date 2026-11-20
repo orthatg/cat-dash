@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+
+from .parse import flatten_records
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +19,9 @@ API_HOSTS = {"US": "https://api.us.petlibro.com"}
 APP_ID = 1
 APP_SN = "c35772530d1041699c87fe62348507a8"
 APP_VERSION = "1.3.45"
+
+# The API accepts up to at least 200 records per page (verified live).
+PAGE_SIZE = 200
 
 CODE_OK = 0
 CODE_NOT_LOGGED_IN = 1009
@@ -167,8 +172,12 @@ class PetlibroClient:
         return await self._device_call("/device/setting/getAttributeSetting", serial) or {}
 
     async def work_records(
-        self, serial: str, start: datetime, end: datetime, size: int = 25
+        self, serial: str, start: datetime, end: datetime, size: int = PAGE_SIZE
     ) -> Any:
+        """One page of records (all kinds, newest first), grouped by day.
+
+        The `type` field is sent the way the app does, but the API ignores it.
+        """
         await self.ensure_login()
         body = {
             "deviceSn": serial,
@@ -178,6 +187,27 @@ class PetlibroClient:
             "type": ["GRAIN_OUTPUT_SUCCESS"],
         }
         return await self._request("/device/workRecord/list", body)
+
+    async def records_between(
+        self, serial: str, start: datetime, end: datetime, *, max_pages: int = 20
+    ) -> list[dict]:
+        """All records in [start, end], flattened, paging back by moving endTime."""
+        seen: set[str] = set()
+        records: list[dict] = []
+        for _ in range(max_pages):
+            page = flatten_records(await self.work_records(serial, start, end, size=PAGE_SIZE))
+            new = [r for r in page if r.get("id") not in seen]
+            seen.update(str(r.get("id")) for r in page)
+            records.extend(new)
+            if len(page) < PAGE_SIZE or not new:
+                break
+            oldest = min(int(r["recordTime"]) for r in page if r.get("recordTime"))
+            end = datetime.fromtimestamp((oldest - 1) / 1000, tz=UTC)
+            if end <= start:
+                break
+        else:
+            _LOGGER.warning("Petlibro %s: stopped paging after %d pages", serial, max_pages)
+        return records
 
     async def bound_pets(self, serial: str) -> Any:
         await self.ensure_login()
