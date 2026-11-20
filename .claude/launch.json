@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cat-dash-backend",
+      "runtimeExecutable": "/opt/homebrew/bin/uv",
+      "runtimeArgs": ["run", "--directory", "backend", "cat-dash"],
+      "port": 8000
+    }
+  ]
+}

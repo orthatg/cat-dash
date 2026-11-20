@@ -14,6 +14,7 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per Petlibro call
     settings = Settings()
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
 

@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 
 from .adapters.litterrobot import LitterRobotAdapter, TokenFile
 from .adapters.petlibro import PetlibroAdapter
@@ -115,6 +115,10 @@ def create_app(
 
     def local_day(ts: datetime) -> str:
         return ts.astimezone(tz).date().isoformat()
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse("/docs")
 
     @app.get("/api/health")
     async def health() -> dict:
