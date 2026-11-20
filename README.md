@@ -23,4 +23,5 @@ the litter box and the automatic feeder.
 ## Configuration
 
 Account credentials for Litter-Robot and Petlibro must never be committed.
-Keep them in `backend/.env` (git-ignored; template in `backend/.env.example`).
+Login emails go in `backend/.env` (git-ignored; template in `backend/.env.example`);
+passwords go in the macOS Keychain via `uv run cat-dash-secrets set <integration>`.

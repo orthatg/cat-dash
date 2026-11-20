@@ -9,8 +9,14 @@ keeps history in SQLite, and serves JSON plus a live event stream to the fronten
 brew install uv           # once
 cd backend
 uv sync                   # creates .venv with Python 3.12 + deps
-cp .env.example .env      # then fill in credentials
+cp .env.example .env      # then fill in the two login emails
+uv run cat-dash-secrets set litterrobot   # password -> macOS Keychain (hidden prompt)
+uv run cat-dash-secrets set petlibro
+uv run cat-dash-secrets check             # confirms both are found
 ```
+
+Passwords live in the Keychain (Keychain Access, name `cat-dash`), never in `.env`
+or git. macOS may ask once to let Python read them; choose **Always Allow**.
 
 ## First run: probe the real devices
 

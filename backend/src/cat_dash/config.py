@@ -7,6 +7,8 @@ from pathlib import Path
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from . import secrets
+
 PLACEHOLDER = "CHANGE_ME"
 
 
@@ -42,13 +44,25 @@ class Settings(BaseSettings):
             return None
         return value
 
+    # Passwords: an env var / .env value wins if set; otherwise the macOS Keychain
+    # (store one with `uv run cat-dash-secrets set <integration>`).
+    def litterrobot_password_value(self) -> str | None:
+        if self.litterrobot_password:
+            return self.litterrobot_password.get_secret_value()
+        return secrets.get_password("litterrobot", self.litterrobot_username)
+
+    def petlibro_password_value(self) -> str | None:
+        if self.petlibro_password:
+            return self.petlibro_password.get_secret_value()
+        return secrets.get_password("petlibro", self.petlibro_email)
+
     @property
     def litterrobot_configured(self) -> bool:
-        return bool(self.litterrobot_username and self.litterrobot_password)
+        return bool(self.litterrobot_username and self.litterrobot_password_value())
 
     @property
     def petlibro_configured(self) -> bool:
-        return bool(self.petlibro_email and self.petlibro_password)
+        return bool(self.petlibro_email and self.petlibro_password_value())
 
     @property
     def db_path(self) -> Path:

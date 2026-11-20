@@ -29,27 +29,30 @@ CLEAN_CYCLE_COMPLETE = "CCC"
 
 def build_adapters(settings: Settings, hub: Hub, store: Store) -> list:
     adapters: list = []
-    hub.set_configured("litterrobot", settings.litterrobot_configured)
-    hub.set_configured("petlibro", settings.petlibro_configured)
-    if settings.litterrobot_configured:
+    lr_password = settings.litterrobot_password_value()
+    pl_password = settings.petlibro_password_value()
+    hub.set_configured("litterrobot", bool(settings.litterrobot_username and lr_password))
+    hub.set_configured("petlibro", bool(settings.petlibro_email and pl_password))
+    if settings.litterrobot_username and lr_password:
         adapters.append(
             LitterRobotAdapter(
                 hub,
                 store,
-                settings.litterrobot_username or "",
-                settings.litterrobot_password.get_secret_value()
-                if settings.litterrobot_password
-                else "",
+                settings.litterrobot_username,
+                lr_password,
                 TokenFile(settings.litterrobot_token_path),
                 history_poll_seconds=settings.litterrobot_history_poll_seconds,
             )
         )
     else:
-        _LOGGER.warning("Litter-Robot credentials not set; skipping (see .env.example)")
-    if settings.petlibro_configured:
+        _LOGGER.warning(
+            "Litter-Robot not configured; set CATDASH_LITTERROBOT_USERNAME in .env and run "
+            "`uv run cat-dash-secrets set litterrobot`"
+        )
+    if settings.petlibro_email and pl_password:
         client = PetlibroClient(
-            settings.petlibro_email or "",
-            settings.petlibro_password.get_secret_value() if settings.petlibro_password else "",
+            settings.petlibro_email,
+            pl_password,
             region=settings.petlibro_region,
             timezone=settings.timezone,
         )
@@ -64,7 +67,10 @@ def build_adapters(settings: Settings, hub: Hub, store: Store) -> list:
             )
         )
     else:
-        _LOGGER.warning("Petlibro credentials not set; skipping (see .env.example)")
+        _LOGGER.warning(
+            "Petlibro not configured; set CATDASH_PETLIBRO_EMAIL in .env and run "
+            "`uv run cat-dash-secrets set petlibro`"
+        )
     return adapters
 
 

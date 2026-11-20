@@ -27,15 +27,16 @@ OUT = Path("data/probe/litterrobot")
 async def main(listen_seconds: int) -> int:
     settings = Settings()
     if not settings.litterrobot_configured:
-        print("Set CATDASH_LITTERROBOT_USERNAME / CATDASH_LITTERROBOT_PASSWORD in backend/.env")
+        print(
+            "Set CATDASH_LITTERROBOT_USERNAME in backend/.env, then: "
+            "uv run cat-dash-secrets set litterrobot"
+        )
         return 1
     account = Account(robot_types=[LitterRobot4])
     try:
         await account.connect(
             username=settings.litterrobot_username,
-            password=settings.litterrobot_password.get_secret_value()
-            if settings.litterrobot_password
-            else None,
+            password=settings.litterrobot_password_value(),
             load_robots=True,
             subscribe_for_updates=True,
         )

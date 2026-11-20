@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.165.0",
     "httpx>=0.28.1",
+    "keyring>=25.7.0",
     "pydantic-settings>=2.16.3",
     # Unofficial API; pin to a known-good release and upgrade deliberately.
     "pylitterbot==2025.9.0",
@@ -15,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 cat-dash = "cat_dash.__main__:main"
+cat-dash-secrets = "cat_dash.secrets_cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.9,<0.14.0"]

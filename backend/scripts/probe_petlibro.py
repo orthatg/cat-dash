@@ -25,11 +25,13 @@ OUT = Path("data/probe/petlibro")
 async def main() -> int:
     settings = Settings()
     if not settings.petlibro_configured:
-        print("Set CATDASH_PETLIBRO_EMAIL / CATDASH_PETLIBRO_PASSWORD in backend/.env")
+        print(
+            "Set CATDASH_PETLIBRO_EMAIL in backend/.env, then: uv run cat-dash-secrets set petlibro"
+        )
         return 1
     client = PetlibroClient(
         settings.petlibro_email or "",
-        settings.petlibro_password.get_secret_value() if settings.petlibro_password else "",
+        settings.petlibro_password_value() or "",
         region=settings.petlibro_region,
         timezone=settings.timezone,
     )
