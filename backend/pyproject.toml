@@ -1,0 +1,40 @@
+[project]
+name = "cat-dash"
+version = "0.1.0"
+description = "Cat Dash backend: Litter-Robot 4 and Petlibro feeder status and history"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.16.3",
+    # Unofficial API; pin to a known-good release and upgrade deliberately.
+    "pylitterbot==2025.9.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+cat-dash = "cat_dash.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.6",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

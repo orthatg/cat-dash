@@ -20,7 +20,8 @@ node_modules/
 out/
 .vite/
 
-# Local data
+# Local data (history DB, login tokens, probe dumps)
+data/
 *.sqlite
 *.sqlite3
 *.db

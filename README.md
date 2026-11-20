@@ -15,9 +15,12 @@ the litter box and the automatic feeder.
 - **Backend:** Python (device API clients, polling, data storage, HTTP API)
 - **Frontend:** JavaScript web app (Electron wrapper is a possibility)
 
-Nothing is decided yet beyond this; the structure will be filled in as the project develops.
+## Layout
+
+- `backend/`: Python service (see [backend/README.md](backend/README.md))
+- `docs/integration-plan.md`: how each device's data is accessed, and what's still unverified
 
 ## Configuration
 
 Account credentials for Litter-Robot and Petlibro must never be committed.
-Keep them in a local `.env` file (git-ignored).
+Keep them in `backend/.env` (git-ignored; template in `backend/.env.example`).
