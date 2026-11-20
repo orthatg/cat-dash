@@ -145,7 +145,8 @@ const PROBLEM_TEXT = {
   rotor_stuck: "Rotor stuck",
 };
 
-export function feederCard(feeder) {
+/** cats: names of the cats that eat here (RFID), shown as the card title. */
+export function feederCard(feeder, cats = [], catColors = {}) {
   const [status, label] = feederStatus(feeder);
   const notes = (feeder.problems || []).map((p) => ["critical", PROBLEM_TEXT[p] || titleCase(p)]);
   if (feeder.desiccant_days_left != null && feeder.desiccant_days_left < 0) {
@@ -162,9 +163,18 @@ export function feederCard(feeder) {
     : "—";
   const nextFeed = feeder.next_feed_at ? dayClock(feeder.next_feed_at) : "No schedule";
 
-  return h("article", { class: "card", "aria-label": `${feeder.name} feeder` },
+  const feederLine = `${feeder.name} · ${feeder.model || "Feeder"}`;
+  const title = cats.length
+    ? h("h3", { class: "card-title cat-title" }, cats.map((cat, i) => {
+      const key = h("span", { class: "cat-key", "aria-hidden": "true" });
+      key.style.background = catColors[cat] || "var(--text-muted)";
+      return h("span", { class: "cat-name" }, i ? h("span", { class: "amp", text: "&" }) : null, key, h("span", { text: cat }));
+    }))
+    : h("h3", { class: "card-title", text: feeder.name });
+
+  return h("article", { class: "card", "aria-label": `${cats.length ? `${cats.join(" and ")}'s feeder, ` : ""}${feeder.name}` },
     h("div", { class: "card-head" },
-      h("div", {}, h("h3", { class: "card-title", text: feeder.name }), h("p", { class: "card-sub", text: feeder.model || "Feeder" })),
+      h("div", {}, title, h("p", { class: "card-sub", text: cats.length ? feederLine : feeder.model || "Feeder" })),
       pill(status, label)),
     h("div", {},
       h("div", { class: "hero" },

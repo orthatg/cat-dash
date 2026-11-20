@@ -17,6 +17,7 @@ const state = {
   drawer: {}, // litter box id -> /drawer response
   catColors: {},
   feederColors: {},
+  feederCats: {}, // feeder id -> cat names seen eating there (RFID)
   historyKey: "",
 };
 
@@ -52,6 +53,7 @@ function assignColors(feederVisits, litterCats) {
   for (const { feeder, cats } of feederVisits) {
     for (const cat of cats) if (!catColors[cat]) catColors[cat] = take();
     feederColors[feeder.device_id] = cats.length === 1 ? catColors[cats[0]] : take();
+    state.feederCats[feeder.device_id] = cats;
   }
   for (const cat of litterCats.slice().sort()) if (!catColors[cat]) catColors[cat] = take();
   state.catColors = catColors;
@@ -70,7 +72,7 @@ function renderCards() {
     ? boxes.map((box) => litterCard(box, state.drawer[box.device_id], state.catColors))
     : [emptyNote("No litter box connected.")]));
   $("food-cards").replaceChildren(...(feeders.length
-    ? feeders.map((feeder) => feederCard(feeder))
+    ? feeders.map((feeder) => feederCard(feeder, state.feederCats[feeder.device_id], state.catColors))
     : [emptyNote("No feeders connected.")]));
 }
 

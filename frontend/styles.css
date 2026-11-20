@@ -145,6 +145,10 @@ main { display: grid; gap: 28px; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .card-title { font-size: 16px; font-weight: 600; margin: 0; }
 .card-sub { font-size: 12px; color: var(--text-muted); margin: 2px 0 0; }
+.cat-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.cat-name { display: inline-flex; align-items: center; gap: 7px; }
+.cat-title .cat-key { width: 10px; height: 10px; }
+.cat-title .amp { color: var(--text-muted); font-weight: 400; margin-right: 8px; }
 
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
   padding: 3px 10px 3px 8px; border-radius: 999px; white-space: nowrap;
