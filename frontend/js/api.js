@@ -17,6 +17,7 @@ export const api = {
   litterDrawer: (id, days) => get(`/api/litterbox/${enc(id)}/drawer?days=${days}`),
   litterCatsDaily: (id, days) => get(`/api/litterbox/${enc(id)}/cats/daily?days=${days}`),
   feederDaily: (id, days) => get(`/api/feeder/${enc(id)}/daily?days=${days}`),
+  insights: (days) => get(`/api/insights?days=${days}`),
   feederVisitsDaily: (id, days) => get(`/api/feeder/${enc(id)}/visits/daily?days=${days}`),
 };
 

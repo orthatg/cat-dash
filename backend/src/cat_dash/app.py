@@ -22,6 +22,7 @@ from .adapters.petlibro import PetlibroAdapter
 from .cats import attribute
 from .config import Settings
 from .hub import Hub
+from .insights import meal_timing, merge_visits, visit_gaps
 from .models import DashboardStatus, DrawerEmptied, FeedEvent, LitterEvent, PetVisit
 from .petlibro import PetlibroClient
 from .store import Store
@@ -302,6 +303,40 @@ def create_app(
     async def feeder_visits(device_id: str, days: int = Query(7, ge=1, le=365)):
         """Each RFID-identified eating visit (cat, time, seconds)."""
         return await store.pet_visits(device_id, since(days))
+
+    @app.get("/api/insights")
+    async def insights(days: int = Query(30, ge=7, le=365)) -> dict:
+        """Per cat: time between litter box visits, and litter visits relative to meals.
+        Cats are matched across devices by name (Whisker pet profile = Petlibro RFID pet)."""
+        cutoff = since(days)
+        litter: dict[str, list[datetime]] = defaultdict(list)
+        for box in hub.snapshot().litter_boxes:
+            for event in await store.litter_events(box.device_id, cutoff):
+                if event.cat_weight_lbs is None:
+                    continue
+                if name := attribute(event.cat_weight_lbs, box.cats):
+                    litter[name.casefold()].append(event.timestamp)
+        meals: dict[str, list[datetime]] = defaultdict(list)
+        names: dict[str, str] = {}
+        for feeder in hub.snapshot().feeders:
+            for visit in await store.pet_visits(feeder.device_id, cutoff):
+                if visit.pet_name:
+                    meals[visit.pet_name.casefold()].append(visit.timestamp)
+                    names.setdefault(visit.pet_name.casefold(), visit.pet_name)
+        for box in hub.snapshot().litter_boxes:
+            for cat in box.cats:
+                names.setdefault(cat.name.casefold(), cat.name)
+        cats = []
+        for key in sorted(set(litter) | set(meals)):
+            visits = merge_visits(litter.get(key, []))
+            cats.append(
+                {
+                    "name": names.get(key, key),
+                    "litter_gaps": visit_gaps(visits),
+                    "meal_timing": meal_timing(visits, meals.get(key, [])),
+                }
+            )
+        return {"days": days, "cats": cats}
 
     @app.get("/api/feeder/{device_id}/visits/daily")
     async def feeder_visits_daily(

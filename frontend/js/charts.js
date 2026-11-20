@@ -3,10 +3,10 @@
 // with a 2px surface ring, hairline solid grid, one y-axis, hover + keyboard tooltips,
 // and a table view for every chart.
 
-import { h } from "./cards.js";
+import { h } from "./dom.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const PLOT_H = 180;
+const DEFAULT_PLOT_H = 180;
 const AXIS_H = 22;
 const TOP = 10;
 
@@ -104,7 +104,8 @@ export function columnChart(el, opts) {
     return;
   }
   const width = Math.max(240, el.clientWidth || 400);
-  const maxV = Math.max(0, ...series.flatMap((ser) => ser.values.map((v) => v ?? 0)));
+  const PLOT_H = opts.height || DEFAULT_PLOT_H;
+  const maxV = Math.max(0, opts.reference?.value ?? 0, ...series.flatMap((ser) => ser.values.map((v) => v ?? 0)));
   const scale = niceScale(0, maxV || 1);
   const left = leftMargin(scale, format);
   const plotW = width - left - 8;
@@ -132,7 +133,7 @@ export function columnChart(el, opts) {
       return bar;
     });
     // Label every k-th day counting back from the last, so the newest day is labeled.
-    if ((n - 1 - i) % labelEvery === 0) {
+    if (opts.labelFilter ? opts.labelFilter(i) : (n - 1 - i) % labelEvery === 0) {
       svg.append(text(left + i * band + band / 2, TOP + PLOT_H + 15, opts.labels[i], { "text-anchor": "middle" }));
     }
     const hit = s("rect", { class: "hit", x: left + i * band, y: TOP, width: band, height: PLOT_H, tabindex: "0",
@@ -149,6 +150,12 @@ export function columnChart(el, opts) {
     hit.addEventListener("blur", leave);
     svg.append(hit);
   });
+  // Optional reference line (e.g. "chance"), drawn over the bars as a hairline.
+  if (opts.reference) {
+    const ry = y(opts.reference.value);
+    svg.insertBefore(s("line", { class: "reference", x1: left, x2: left + plotW, y1: ry, y2: ry }), svg.querySelector(".hit"));
+    svg.insertBefore(text(left + plotW, ry - 4, opts.reference.label, { "text-anchor": "end", class: "label" }), svg.querySelector(".hit"));
+  }
   el.append(svg);
 }
 
@@ -169,6 +176,7 @@ export function lineChart(el, opts) {
     return;
   }
   const width = Math.max(240, el.clientWidth || 400);
+  const PLOT_H = opts.height || DEFAULT_PLOT_H;
   const values = all.map((p) => p.v);
   const scale = niceScale(opts.yMin ?? Math.min(...values), Math.max(opts.yMax ?? -Infinity, ...values));
   const left = leftMargin(scale, format);

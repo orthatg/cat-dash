@@ -118,3 +118,14 @@ export function partOfDay(value) {
   const part = hour < 5 ? "night" : hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 21 ? "evening" : "night";
   return `${d.toLocaleDateString([], { weekday: "long" })} ${part}`;
 }
+
+/** Compact age: "now", "35m", "2h", "3d". */
+export function shortAgo(value, now = Date.now()) {
+  const d = toDate(value);
+  if (!d) return "—";
+  const minutes = Math.max(0, Math.round((now - d.getTime()) / MIN));
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)}h`;
+  return `${Math.round(minutes / (24 * 60))}d`;
+}

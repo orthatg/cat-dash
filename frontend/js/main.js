@@ -1,13 +1,14 @@
 import { api, subscribe } from "./api.js";
-import { drawerFeature, errorsBanner, feederCard, litterCard } from "./cards.js";
 import { chartCard, columnChart, lineChart } from "./charts.js";
+import { errorsBanner, h } from "./dom.js";
 import { dayPart, longDateTime, number, parseDay, shortDay } from "./format.js";
+import { feederTile, gapsTile, litterTiles, mealsTile } from "./tiles.js";
 
 // Identity colors (fixed slot per entity, never by rank). A cat keeps the same color in
 // both sections; a feeder takes its cat's color when it serves one cat.
 const SLOTS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)"];
-// The litter box's own data (cycles, drawer) is drawn in neutral graphite ink: hue is
-// reserved for cats (blue/orange) and the food accent (aqua). Validated as a set.
+// The litter box's own data (cycles, drawer) is drawn in neutral ink: hue is reserved
+// for the cats (validated pair, light and dark).
 const LITTER = "var(--litter-mark)";
 const HISTORY_REFRESH_MS = 10 * 60_000;
 
@@ -60,7 +61,7 @@ function assignColors(feederVisits, litterCats) {
   state.feederColors = feederColors;
 }
 
-// ---------- cards ----------
+// ---------- tiles (live) ----------
 
 function renderCards() {
   const status = state.status;
@@ -68,11 +69,11 @@ function renderCards() {
   errorsBanner($("errors"), status);
   const boxes = status.litter_boxes.slice().sort(byName);
   const feeders = status.feeders.slice().sort(byName);
-  $("litter-cards").replaceChildren(...(boxes.length
-    ? boxes.flatMap((box) => [drawerFeature(box), litterCard(box, state.drawer[box.device_id], state.catColors)])
+  $("litter-tiles").replaceChildren(...(boxes.length
+    ? boxes.flatMap((box) => litterTiles(box, state.catColors))
     : [emptyNote("No litter box connected.")]));
-  $("food-cards").replaceChildren(...(feeders.length
-    ? feeders.map((feeder) => feederCard(feeder, state.feederCats[feeder.device_id], state.catColors))
+  $("food-tiles").replaceChildren(...(feeders.length
+    ? feeders.map((feeder) => feederTile(feeder, state.feederCats[feeder.device_id], state.catColors))
     : [emptyNote("No feeders connected.")]));
 }
 
@@ -127,7 +128,7 @@ async function loadHistory() {
   const status = state.status;
   if (!status) return;
   const days = state.days;
-  const containers = [$("litter-charts"), $("food-charts")];
+  const containers = [$("insight-tiles"), $("more-charts")];
   containers.forEach((c) => c.classList.add("loading")); // hold the previous render
   const run = (async () => {
     const boxes = status.litter_boxes.slice().sort(byName);
@@ -149,7 +150,8 @@ async function loadHistory() {
         return { feeder, daily, visits };
       })),
     ]);
-    return { litter, feeds };
+    const insights = await api.insights(Math.max(days, 14));
+    return { litter, feeds, insights };
   })();
   loading = run;
   try {
@@ -171,8 +173,15 @@ async function loadHistory() {
       titles: daysList.map((d) => parseDay(d).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })),
       domain: [new Date(Date.now() - days * 86_400_000), new Date()],
     };
-    replaceCharts($("litter-charts"), data.litter.flatMap((entry) => litterCharts(entry, ctx, data.litter.length > 1)));
-    replaceCharts($("food-charts"), data.feeds.length ? foodCharts(data.feeds, ctx) : []);
+    $("insight-tiles").replaceChildren(
+      gapsTile(data.insights.cats, state.catColors),
+      mealsTile(data.insights.cats, state.catColors),
+    );
+    renderMoreSummary(data, days);
+    replaceCharts($("more-charts"), [
+      ...data.litter.flatMap((entry) => litterCharts(entry, ctx, data.litter.length > 1)),
+      ...(data.feeds.length ? foodCharts(data.feeds, ctx) : []),
+    ]);
   } catch (err) {
     console.error(err);
   } finally {
@@ -183,6 +192,24 @@ async function loadHistory() {
 function replaceCharts(container, cards) {
   for (const old of container.children) old.dispose?.();
   container.replaceChildren(...cards);
+}
+
+// ---------- "More": summary numbers, then the full charts when opened ----------
+
+function renderMoreSummary({ litter, feeds }, days) {
+  const chips = [];
+  for (const { box, daily, drawer } of litter) {
+    const cycles = daily.reduce((a, d) => a + d.clean_cycles, 0) / days;
+    chips.push([number(cycles, 1), "cleans / day"]);
+    if (drawer.average_days_between_empties) chips.push([`${number(drawer.average_days_between_empties, 1)} d`, "between empties"]);
+    if (box.lifetime_cycles) chips.push([number(box.lifetime_cycles), "lifetime cycles"]);
+  }
+  const portions = feeds.reduce((a, f) => a + f.daily.reduce((x, d) => x + d.portions, 0), 0) / days;
+  if (feeds.length) chips.push([number(portions, 1), "portions / day"]);
+  const warnings = (state.status?.feeders || []).filter((f) => f.desiccant_days_left != null && f.desiccant_days_left < 0).length;
+  if (warnings) chips.push([String(warnings), warnings === 1 ? "desiccant overdue" : "desiccants overdue"]);
+  $("more-summary").replaceChildren(...chips.map(([value, label]) =>
+    h("span", { class: "chip" }, h("strong", { text: value }), h("span", { text: label }))));
 }
 
 // ---------- litter box charts ----------
@@ -370,7 +397,8 @@ function setupRange() {
   const sync = () => buttons.forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.days) === state.days)));
   sync();
   for (const button of buttons) {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault(); // the buttons sit in <summary>: don't toggle "More"
       state.days = Number(button.dataset.days);
       saveDays(state.days);
       sync();

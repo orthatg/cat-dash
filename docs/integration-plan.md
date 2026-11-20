@@ -88,6 +88,17 @@ in `backend/tests/fixtures/petlibro/`.
 - Desiccant: `remainingDesiccantDays` goes negative when overdue (`desiccantState: OVER_DUE`).
 - Quantities are portions (1 portion = 1/12 cup, about 10 g).
 
+## Insights (litter box + feeders share a room)
+
+`backend/src/cat_dash/insights.py`, served at `/api/insights`. Cats are joined across devices
+by name (Whisker pet profile = Petlibro RFID pet). Weight readings within 10 min count as one visit.
+
+- **Time between litter visits:** live median Zora 2.5 h (most gaps 1.8–3.4 h), Maui ~18 h.
+- **Litter after meals:** share of litter visits within N minutes after the same cat's last
+  feeder visit, against chance (the fraction of time that falls within N minutes after any
+  meal). Live: Zora 45% within 15 min vs 16% chance; Maui 23% vs 9% (48% vs 17% within 30 min).
+  So both are roughly 3x likelier than chance to use the box shortly after eating.
+
 ## Still unverified
 
 1. Litter-Robot live push: the websocket subscribes fine, but no push has been seen yet

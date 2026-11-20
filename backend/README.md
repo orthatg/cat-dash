@@ -49,6 +49,7 @@ uv run pytest             # tests (no network)
 | `GET /api/litterbox/{id}/levels?days=7` | Waste drawer % and litter level % over time |
 | `GET /api/litterbox/{id}/drawer?days=90` | Waste drawer: last emptied, cycles since, every empty (inferred), averages, level history |
 | `GET /api/litterbox/{id}/insight` | Whisker's own 30-day cycle summary |
+| `GET /api/insights?days=30` | Per cat: time between litter box visits, and litter visits around meals vs. chance |
 | `GET /api/feeder/{id}/events?days=7` | Each feed (portions; 1 portion = 1/12 cup) |
 | `GET /api/feeder/{id}/daily?days=30` | Portions and feeds per day |
 | `GET /api/feeder/{id}/visits?days=7` | Each RFID-identified cat visit (cat, time, seconds eating) |
