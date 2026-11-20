@@ -75,3 +75,29 @@ async def test_api_status_and_feeder_daily(store):
         assert sum(d["portions"] for d in daily) == 3
         assert sum(d["feeds"] for d in daily) == 2
         assert client.get("/api/litterbox/nope/insight").status_code == 404
+
+
+async def test_drawer_endpoint(store):
+    t = datetime(2026, 11, 1, tzinfo=UTC)
+    await store.add_drawer_levels("box", [(t, 80.0), (t + timedelta(days=4), 90.0)])
+    await store.add_drawer_empties(
+        "box", [(t + timedelta(hours=1), 80.0), (t + timedelta(days=4, hours=1), 90.0)]
+    )
+    await store.add_litter_events(
+        [
+            LitterEvent(
+                device_id="box",
+                timestamp=t + timedelta(days=d),
+                code="CCC",
+                text="Clean Cycle Complete",
+            )
+            for d in (1, 2, 3)
+        ]
+    )
+    app = create_app(Settings(_env_file=None), store=store, hub=Hub(), adapters=[])
+    with TestClient(app) as client:
+        body = client.get("/api/litterbox/box/drawer?days=3650").json()
+    assert body["average_days_between_empties"] == 4.0
+    assert body["average_cycles_between_empties"] == 3.0
+    assert [e["clean_cycles"] for e in body["emptied"]] == [None, 3]
+    assert len(body["levels"]) == 2

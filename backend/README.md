@@ -46,6 +46,7 @@ uv run pytest             # tests (no network)
 | `GET /api/litterbox/{id}/events?days=7` | Activity log (clean cycles, cat detected, weights...) |
 | `GET /api/litterbox/{id}/daily?days=30` | Clean cycles per day and cat weight |
 | `GET /api/litterbox/{id}/levels?days=7` | Waste drawer % and litter level % over time |
+| `GET /api/litterbox/{id}/drawer?days=90` | Waste drawer: last emptied, cycles since, every empty (inferred), averages, level history |
 | `GET /api/litterbox/{id}/insight` | Whisker's own 30-day cycle summary |
 | `GET /api/feeder/{id}/events?days=7` | Each feed (portions; 1 portion = 1/12 cup) |
 | `GET /api/feeder/{id}/daily?days=30` | Portions and feeds per day |

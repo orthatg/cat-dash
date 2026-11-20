@@ -11,8 +11,10 @@ from cat_dash.adapters.litterrobot import (
     LitterRobotAdapter,
     TokenFile,
     event_from_activity,
+    parse_raw_activity,
     status_from_robot,
 )
+from cat_dash.drawer import detect_empties
 from cat_dash.hub import Hub
 from cat_dash.store import Store
 
@@ -35,8 +37,9 @@ def test_status_from_real_robot():
     assert status.waste_drawer_full is False
     assert (status.litter_level_percent, status.litter_level_state) == (90.0, "OPTIMAL")
     assert status.cat_weight_lbs == 5.38
-    # pylitterbot's cycle_count is the lifetime odometer, not "since drawer reset".
-    assert (status.cycles_since_drawer_reset, status.lifetime_cycles) == (17, 7299)
+    # pylitterbot's cycle_count is the lifetime odometer, not "since drawer emptied".
+    assert status.lifetime_cycles == 7299
+    assert status.last_emptied_at is None  # filled from history by the adapter
 
 
 def test_drawer_full_state():
@@ -67,47 +70,88 @@ def test_event_from_weight_activity():
     assert event.code is None and event.cat_weight_lbs == 10.25
 
 
-class HistoryRobot:
-    """Wraps the real robot but serves canned history."""
+def raw(ts: datetime, value: str, action: str = "") -> dict:
+    return {
+        "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S.000000000"),
+        "value": value,
+        "actionValue": action,
+    }
 
-    def __init__(self, robot, activities):
+
+class HistoryRobot:
+    """Wraps the real robot but answers the activity GraphQL query with canned entries."""
+
+    def __init__(self, robot, entries):
         self._robot = robot
-        self._activities = activities
+        self.entries = entries
         self.calls = []
 
     def __getattr__(self, name):
         return getattr(self._robot, name)
 
-    async def get_activity_history(self, limit, start):
-        self.calls.append((limit, start))
-        return self._activities
+    async def _post(self, json):
+        self.calls.append(json["variables"])
+        return {"data": {"getLitterRobot4Activity": self.entries}}
 
     async def get_insight(self, days):
         return SimpleNamespace(total_cycles=3, average_cycles=1.0, cycle_history=[])
 
 
-async def test_sync_history_backfills_then_fills_last_activity(tmp_path):
-    t = datetime.now(UTC) - timedelta(hours=2)
-    robot = HistoryRobot(
+def test_parse_raw_activity_keeps_drawer_levels():
+    t = datetime(2026, 11, 20, 15, 0, tzinfo=UTC)
+    events, levels = parse_raw_activity(
         real_robot(),
+        "dev",
         [
-            Activity(t, LRStatus.CAT_DETECTED),
-            Activity(t + timedelta(minutes=8), LRStatus.CLEAN_CYCLE_COMPLETE),
-            Activity(t + timedelta(minutes=9), "Pet Weight Recorded: 5.4 lbs"),
+            raw(t, "robotStatusCatDetect"),
+            raw(t, "robotCycleStatusIdle"),
+            raw(t, "catWeight", "5.4"),
+            raw(t, "DFILevelPercent", "42"),
         ],
     )
+    assert [e.code for e in events] == ["CD", "CCC", None]
+    assert events[2].cat_weight_lbs == 5.4
+    assert levels == [(t, 42.0)]
+
+
+def test_detect_empties_ignores_noise():
+    t = datetime(2026, 11, 1, tzinfo=UTC)
+    readings = [49, 87, 0, 3, 40, 92, 68, 76, 14, 82, 0, 2]  # from the live robot
+    levels = [(t + timedelta(hours=i), float(p)) for i, p in enumerate(readings)]
+    empties = detect_empties(levels)
+    assert [(e[0] - t, e[1]) for e in empties] == [
+        (timedelta(hours=2), 87.0),
+        (timedelta(hours=10), 82.0),
+    ]
+
+
+async def test_sync_tracks_drawer_empties(tmp_path):
+    t = datetime.now(UTC).replace(microsecond=0) - timedelta(days=3)
+    entries = [
+        raw(t, "DFILevelPercent", "80"),
+        raw(t + timedelta(hours=1), "DFILevelPercent", "0"),  # emptied
+        raw(t + timedelta(hours=2), "robotStatusCatDetect"),
+        raw(t + timedelta(hours=3), "robotCycleStatusIdle"),
+        raw(t + timedelta(hours=4), "robotCycleStatusIdle"),
+        raw(t + timedelta(hours=4, minutes=1), "DFILevelPercent", "5"),
+    ]
+    robot = HistoryRobot(real_robot(), entries)
     hub, store = Hub(), Store(":memory:")
     adapter = LitterRobotAdapter(hub, store, "u", "p", TokenFile(tmp_path / "t.json"))
     adapter._account = SimpleNamespace(get_robots=lambda _cls: [robot])
 
     await adapter.sync_history()
-    limit, _ = robot.calls[0]
-    assert limit == 5000  # first run: 30-day backfill
+    assert robot.calls[0]["limit"] == 5000  # first run: 30-day backfill
     status = hub.litter_box("abc123unitid")
-    assert status.last_cat_detected_at == t
-    assert status.last_clean_cycle_at == t + timedelta(minutes=8)
+    assert status.last_emptied_at == t + timedelta(hours=1)
+    assert status.cycles_since_emptied == 2
+    assert status.last_cat_detected_at == t + timedelta(hours=2)
+    assert status.last_clean_cycle_at == t + timedelta(hours=4)
 
     await adapter.sync_history()
-    limit, start = robot.calls[1]
-    assert limit == 1000 and start == t + timedelta(minutes=9)  # incremental
-    assert len(await store.litter_events("abc123unitid", t - timedelta(days=1))) == 3
+    second = robot.calls[1]
+    assert second["limit"] == 1000
+    assert second["startTimestamp"] == (t + timedelta(hours=4, minutes=1)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    assert len(await store.drawer_empties("abc123unitid")) == 1  # no duplicates

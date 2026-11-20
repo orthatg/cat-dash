@@ -36,6 +36,11 @@ Verified against a live LR4 on 2026-11-20. An anonymized response is in
   while `isDFIPartialFull` was true. Cat Dash follows the percentage, like the app:
   `waste_drawer_state` is empty (0) / partial / full (`isDFIFull` or 100). The
   `isDFIPartialFull` flag is ignored.
+- **Drawer emptied** isn't logged and `DFINumberOfCycles` doesn't reset on emptying.
+  Cat Dash reads the raw `DFILevelPercent` history (logged after each cycle; `pylitterbot`
+  drops its value, so the GraphQL activity query is sent directly) and records an empty
+  when the level falls to 5% or less from at least 30% (`backend/src/cat_dash/drawer.py`).
+  Live: 6 empties in 30 days, about every 5.3 days or 52 cycles. Dips like 92→68 are ignored.
 - `lastSeen` was 3 days stale on an online, active robot, so it was dropped.
 - History volume is about 60 entries a day (about 1,850 for 30 days). The backfill uses
   limit 5000. Activity entries for `DFILevelPercent` carry no value in `pylitterbot`.

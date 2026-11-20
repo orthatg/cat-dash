@@ -23,12 +23,14 @@ class LitterBoxStatus(BaseModel):
     litter_level_percent: float | None
     litter_level_state: str | None = None
     cat_weight_lbs: float | None
-    cycles_since_drawer_reset: int | None
     lifetime_cycles: int | None = None
     sleeping: bool
     # From the activity history (synced every few minutes).
     last_clean_cycle_at: datetime | None = None
     last_cat_detected_at: datetime | None = None
+    # Inferred from the drawer level falling to ~0 (see cat_dash.drawer).
+    last_emptied_at: datetime | None = None
+    cycles_since_emptied: int | None = None
     updated_at: datetime
 
 
@@ -54,6 +56,15 @@ class FeederStatus(BaseModel):
     desiccant_state: str | None = None
     problems: list[str] = Field(default_factory=list)
     updated_at: datetime
+
+
+class DrawerEmptied(BaseModel):
+    device_id: str
+    timestamp: datetime
+    level_before_percent: float | None
+    # Clean cycles between the previous empty and this one.
+    clean_cycles: int | None = None
+    days_since_previous: float | None = None
 
 
 class LitterEvent(BaseModel):

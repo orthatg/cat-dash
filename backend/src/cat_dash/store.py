@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS pet_visits (
     event_type TEXT,
     PRIMARY KEY (device_id, ts, pet_key)
 );
+CREATE TABLE IF NOT EXISTS drawer_levels (
+    device_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    percent REAL NOT NULL,
+    PRIMARY KEY (device_id, ts)
+);
+CREATE TABLE IF NOT EXISTS drawer_empties (
+    device_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    level_before REAL,
+    PRIMARY KEY (device_id, ts)
+);
 CREATE TABLE IF NOT EXISTS sync_state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -252,3 +264,76 @@ class Store:
                 self._conn.execute("INSERT OR REPLACE INTO sync_state VALUES (?, ?)", (key, value))
 
         await self._run(write)
+
+    # --- waste drawer (level readings + inferred empties) ---
+    async def add_drawer_levels(
+        self, device_id: str, levels: Iterable[tuple[datetime, float]]
+    ) -> int:
+        rows = [(device_id, _ts(ts), pct) for ts, pct in levels]
+
+        def write() -> int:
+            with self._conn:
+                cur = self._conn.executemany(
+                    "INSERT OR IGNORE INTO drawer_levels VALUES (?, ?, ?)", rows
+                )
+            return cur.rowcount
+
+        return await self._run(write)
+
+    async def drawer_levels(
+        self, device_id: str, since: datetime | None = None
+    ) -> list[tuple[datetime, float]]:
+        def read():
+            return self._conn.execute(
+                "SELECT ts, percent FROM drawer_levels WHERE device_id = ? AND ts >= ? ORDER BY ts",
+                (device_id, _ts(since) if since else ""),
+            ).fetchall()
+
+        return [(_dt(r[0]), r[1]) for r in await self._run(read)]
+
+    async def latest_drawer_level(self, device_id: str) -> datetime | None:
+        def read():
+            return self._conn.execute(
+                "SELECT MAX(ts) FROM drawer_levels WHERE device_id = ?", (device_id,)
+            ).fetchone()[0]
+
+        value = await self._run(read)
+        return _dt(value) if value else None
+
+    async def add_drawer_empties(
+        self, device_id: str, empties: Iterable[tuple[datetime, float]]
+    ) -> int:
+        rows = [(device_id, _ts(ts), before) for ts, before in empties]
+
+        def write() -> int:
+            with self._conn:
+                cur = self._conn.executemany(
+                    "INSERT OR IGNORE INTO drawer_empties VALUES (?, ?, ?)", rows
+                )
+            return cur.rowcount
+
+        return await self._run(write)
+
+    async def drawer_empties(
+        self, device_id: str, since: datetime | None = None
+    ) -> list[tuple[datetime, float]]:
+        def read():
+            return self._conn.execute(
+                "SELECT ts, level_before FROM drawer_empties WHERE device_id = ? AND ts >= ?"
+                " ORDER BY ts",
+                (device_id, _ts(since) if since else ""),
+            ).fetchall()
+
+        return [(_dt(r[0]), r[1]) for r in await self._run(read)]
+
+    async def count_litter_events(
+        self, device_id: str, code: str, after: datetime | None, before: datetime | None = None
+    ) -> int:
+        def read():
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM litter_events WHERE device_id = ? AND code = ?"
+                " AND ts > ? AND ts <= ?",
+                (device_id, code, _ts(after) if after else "", _ts(before) if before else "9"),
+            ).fetchone()[0]
+
+        return await self._run(read)

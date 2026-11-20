@@ -19,7 +19,7 @@ from .adapters.litterrobot import LitterRobotAdapter, TokenFile
 from .adapters.petlibro import PetlibroAdapter
 from .config import Settings
 from .hub import Hub
-from .models import DashboardStatus, FeedEvent, LitterEvent, PetVisit
+from .models import DashboardStatus, DrawerEmptied, FeedEvent, LitterEvent, PetVisit
 from .petlibro import PetlibroClient
 from .store import Store
 
@@ -177,6 +177,59 @@ def create_app(
     async def litter_levels(device_id: str, days: int = Query(7, ge=1, le=365)) -> list[dict]:
         """Waste drawer and litter level over time."""
         return await store.litter_snapshots(device_id, since(days))
+
+    @app.get("/api/litterbox/{device_id}/drawer")
+    async def litter_drawer(device_id: str, days: int = Query(90, ge=1, le=3650)) -> dict:
+        """Waste drawer tracking: when it was emptied, how full it got, and the level
+        after each clean cycle. Empties are inferred from the level falling to ~0."""
+        empties = await store.drawer_empties(device_id)
+        history: list[DrawerEmptied] = []
+        previous: datetime | None = None
+        for ts, level_before in empties:
+            history.append(
+                DrawerEmptied(
+                    device_id=device_id,
+                    timestamp=ts,
+                    level_before_percent=level_before,
+                    clean_cycles=(
+                        await store.count_litter_events(
+                            device_id, CLEAN_CYCLE_COMPLETE, after=previous, before=ts
+                        )
+                        if previous
+                        else None
+                    ),
+                    days_since_previous=(
+                        round((ts - previous).total_seconds() / 86400, 2) if previous else None
+                    ),
+                )
+            )
+            previous = ts
+        intervals = [e.days_since_previous for e in history if e.days_since_previous]
+        cycles = [e.clean_cycles for e in history if e.clean_cycles is not None]
+        cutoff = since(days)
+        box = hub.litter_box(device_id)
+        return {
+            "current_percent": box.waste_drawer_percent if box else None,
+            "current_state": box.waste_drawer_state if box else None,
+            "last_emptied_at": previous,
+            "days_since_emptied": (
+                round((datetime.now(UTC) - previous).total_seconds() / 86400, 2)
+                if previous
+                else None
+            ),
+            "cycles_since_emptied": box.cycles_since_emptied if box else None,
+            "average_days_between_empties": (
+                round(sum(intervals) / len(intervals), 2) if intervals else None
+            ),
+            "average_cycles_between_empties": (
+                round(sum(cycles) / len(cycles), 1) if cycles else None
+            ),
+            "emptied": [e for e in history if e.timestamp >= cutoff],
+            "levels": [
+                {"timestamp": ts, "percent": pct}
+                for ts, pct in await store.drawer_levels(device_id, cutoff)
+            ],
+        }
 
     @app.get("/api/litterbox/{device_id}/insight")
     async def litter_insight(device_id: str) -> dict:

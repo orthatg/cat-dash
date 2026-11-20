@@ -22,7 +22,9 @@ from pylitterbot.activity import Activity, Insight
 from pylitterbot.enums import LitterBoxStatus as LRStatus
 from pylitterbot.event import EVENT_UPDATE
 from pylitterbot.exceptions import LitterRobotLoginException
+from pylitterbot.utils import to_timestamp
 
+from ..drawer import detect_empties
 from ..hub import Hub
 from ..models import LitterBoxStatus, LitterEvent
 from ..store import Store
@@ -45,6 +47,70 @@ SNAPSHOT_MIN_INTERVAL = timedelta(minutes=10)
 AUTH_RETRY = timedelta(minutes=30)
 # After a pushed status change, wait a bit and then pull the new activity entries.
 SYNC_DELAY = timedelta(seconds=20)
+# Raw activity value carrying the drawer level after each cycle.
+DRAWER_LEVEL = "DFILevelPercent"
+
+# The same query pylitterbot's get_activity_history() sends, except we keep the raw
+# entries: pylitterbot drops actionValue for DFILevelPercent, which we need for
+# drawer tracking. Uses pylitterbot's private _post/_parse_activity (version pinned).
+_ACTIVITY_QUERY = """
+query GetLR4Activity(
+    $serial: String!
+    $startTimestamp: String
+    $limit: Int
+    $consumer: String
+) {
+    getLitterRobot4Activity(
+        serial: $serial
+        startTimestamp: $startTimestamp
+        limit: $limit
+        consumer: $consumer
+    ) {
+        timestamp
+        value
+        actionValue
+    }
+}
+"""
+
+
+async def fetch_raw_activity(robot: Any, limit: int, start: datetime) -> list[dict]:
+    start = start.astimezone(UTC).replace(microsecond=0)
+    data = await robot._post(
+        json={
+            "query": _ACTIVITY_QUERY,
+            "variables": {
+                "serial": robot.serial,
+                "limit": limit,
+                "startTimestamp": start.strftime("%Y-%m-%d %H:%M:%S"),
+                "consumer": "app",
+            },
+        }
+    )
+    entries = (data or {}).get("data", {}).get("getLitterRobot4Activity")
+    if entries is None:
+        raise RuntimeError("Litter-Robot activity history could not be retrieved")
+    return entries
+
+
+def parse_raw_activity(
+    robot: Any, device_id: str, entries: list[dict]
+) -> tuple[list[LitterEvent], list[tuple[datetime, float]]]:
+    """Split raw entries into events (as pylitterbot would parse them) and drawer levels."""
+    events: list[LitterEvent] = []
+    levels: list[tuple[datetime, float]] = []
+    for entry in entries:
+        timestamp = to_timestamp(entry.get("timestamp"))
+        if timestamp is None:
+            continue
+        if entry.get("value") == DRAWER_LEVEL:
+            with contextlib.suppress(TypeError, ValueError):
+                levels.append((timestamp, float(entry.get("actionValue"))))
+            continue  # pylitterbot's version of this entry carries no value
+        events.append(
+            event_from_activity(device_id, Activity(timestamp, robot._parse_activity(entry)))
+        )
+    return events, levels
 
 
 def _drawer_state(percent: float, full: bool) -> str:
@@ -59,20 +125,13 @@ def _drawer_state(percent: float, full: bool) -> str:
     return "partial"
 
 
-def _int_or_none(value: Any) -> int | None:
-    try:
-        return int(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
 def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatus:
     """Map a pylitterbot LitterRobot4 to our model.
 
     Checked against a live LR4 on 2026-11-20: pylitterbot's `cycle_count` is the
-    lifetime odometer (odometerCleanCycles); cycles since the drawer was emptied is
-    the raw DFINumberOfCycles. The drawer state follows DFILevelPercent, which matched
-    the Whisker app ("Empty" at 0); isDFIPartialFull did not.
+    lifetime odometer (odometerCleanCycles). The drawer state follows DFILevelPercent,
+    which matched the Whisker app ("Empty" at 0); isDFIPartialFull did not. Last
+    emptied / cycles since emptied come from history (see cat_dash.drawer).
     """
     data = robot.to_dict() if hasattr(robot, "to_dict") else {}
     status = robot.status
@@ -94,7 +153,6 @@ def status_from_robot(robot: Any, now: datetime | None = None) -> LitterBoxStatu
         litter_level_percent=float(robot.litter_level) if robot.litter_level is not None else None,
         litter_level_state=data.get("litterLevelState"),
         cat_weight_lbs=float(weight) if weight else None,
-        cycles_since_drawer_reset=_int_or_none(data.get("DFINumberOfCycles")),
         lifetime_cycles=robot.cycle_count,
         sleeping=robot.is_sleeping,
         updated_at=now or datetime.now(UTC),
@@ -164,6 +222,7 @@ class LitterRobotAdapter:
         # device_id -> {"last_clean_cycle_at": dt, "last_cat_detected_at": dt}
         self._latest: dict[str, dict[str, datetime | None]] = {}
         self._last_code: dict[str, str | None] = {}
+        self._last_drawer: dict[str, float] = {}
         self._sync_lock = asyncio.Lock()
         self._sync_task: asyncio.Task | None = None
 
@@ -269,7 +328,9 @@ class LitterRobotAdapter:
             self._hub.update_litter_box(status)
             previous = self._last_code.get(status.device_id, status.status_code)
             self._last_code[status.device_id] = status.status_code
-            if previous != status.status_code:
+            previous_pct = self._last_drawer.get(status.device_id, status.waste_drawer_percent)
+            self._last_drawer[status.device_id] = status.waste_drawer_percent
+            if previous != status.status_code or previous_pct != status.waste_drawer_percent:
                 # A pushed state change (cat detected, cycle done...) means new activity.
                 self._schedule_sync()
             self._maybe_snapshot(status)
@@ -306,23 +367,43 @@ class LitterRobotAdapter:
     async def _sync_history(self) -> None:
         for robot in self.robots:
             device_id = str(robot.id)
-            latest = await self._store.latest_litter_event(device_id)
+            # Drawer levels are logged after every cycle, so the latest one is a good
+            # cursor; anything refetched is de-duplicated by the store.
+            latest = await self._store.latest_drawer_level(device_id)
             if latest:
-                activities = await robot.get_activity_history(limit=INCREMENTAL_LIMIT, start=latest)
+                entries = await fetch_raw_activity(robot, INCREMENTAL_LIMIT, latest)
             else:
-                activities = await robot.get_activity_history(
-                    limit=BACKFILL_LIMIT, start=datetime.now(UTC) - BACKFILL
+                entries = await fetch_raw_activity(
+                    robot, BACKFILL_LIMIT, datetime.now(UTC) - BACKFILL
                 )
-            added = await self._store.add_litter_events(
-                event_from_activity(device_id, a) for a in activities
+            events, levels = parse_raw_activity(robot, device_id, entries)
+            added = await self._store.add_litter_events(events)
+            await self._store.add_drawer_levels(device_id, levels)
+            new_empties = await self._store.add_drawer_empties(
+                device_id, detect_empties(await self._store.drawer_levels(device_id))
             )
-            _LOGGER.info("Litter-Robot %s: %d new activity rows", robot.name, added)
+            _LOGGER.info(
+                "Litter-Robot %s: %d new activity rows, %d drawer empties",
+                robot.name,
+                added,
+                new_empties,
+            )
+            empties = await self._store.drawer_empties(device_id)
+            last_emptied = empties[-1][0] if empties else None
             self._latest[device_id] = {
                 "last_clean_cycle_at": await self._store.latest_litter_event(
                     device_id, code=CLEAN_CYCLE_COMPLETE
                 ),
                 "last_cat_detected_at": await self._store.latest_litter_event(
                     device_id, code=CAT_DETECTED
+                ),
+                "last_emptied_at": last_emptied,
+                "cycles_since_emptied": (
+                    await self._store.count_litter_events(
+                        device_id, CLEAN_CYCLE_COMPLETE, after=last_emptied
+                    )
+                    if last_emptied
+                    else None
                 ),
             }
             self._insights[device_id] = await robot.get_insight(days=30)
