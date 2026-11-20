@@ -7,6 +7,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class CatProfile(BaseModel):
+    """A pet profile from the Whisker app (used to tell cats apart by weight)."""
+
+    name: str
+    weight_lbs: float
+
+
 class LitterBoxStatus(BaseModel):
     device_id: str
     name: str
@@ -28,6 +35,9 @@ class LitterBoxStatus(BaseModel):
     # From the activity history (synced every few minutes).
     last_clean_cycle_at: datetime | None = None
     last_cat_detected_at: datetime | None = None
+    # Whisker pet profiles, and which of them the latest weight reading matches.
+    cats: list[CatProfile] = Field(default_factory=list)
+    last_cat: str | None = None
     # Inferred from the drawer level falling to ~0 (see cat_dash.drawer).
     last_emptied_at: datetime | None = None
     cycles_since_emptied: int | None = None

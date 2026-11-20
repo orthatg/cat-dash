@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .adapters.litterrobot import LitterRobotAdapter, TokenFile
 from .adapters.petlibro import PetlibroAdapter
+from .cats import attribute
 from .config import Settings
 from .hub import Hub
 from .models import DashboardStatus, DrawerEmptied, FeedEvent, LitterEvent, PetVisit
@@ -178,6 +179,28 @@ def create_app(
                 "weight_readings": len(weights.get(day, [])),
             }
             for day in sorted(set(cycles) | set(weights))
+        ]
+
+    @app.get("/api/litterbox/{device_id}/cats/daily")
+    async def litter_cats_daily(device_id: str, days: int = Query(30, ge=1, le=365)) -> list[dict]:
+        """Per cat per local day: litter box visits (weight readings) and median weight.
+        Readings are matched to Whisker pet profiles by weight (see cat_dash.cats)."""
+        box = hub.litter_box(device_id)
+        cats = box.cats if box else []
+        readings: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for event in await store.litter_events(device_id, since(days)):
+            if event.cat_weight_lbs is None:
+                continue
+            name = attribute(event.cat_weight_lbs, cats) or "Unknown"
+            readings[(local_day(event.timestamp), name)].append(event.cat_weight_lbs)
+        return [
+            {
+                "date": day,
+                "cat": name,
+                "visits": len(values),
+                "weight_lbs": round(median(values), 2),
+            }
+            for (day, name), values in sorted(readings.items())
         ]
 
     @app.get("/api/litterbox/{device_id}/levels")

@@ -45,6 +45,7 @@ uv run pytest             # tests (no network)
 | `GET /api/stream` | Server-sent events: full status on connect and on every change |
 | `GET /api/litterbox/{id}/events?days=7` | Activity log (clean cycles, cat detected, weights...) |
 | `GET /api/litterbox/{id}/daily?days=30` | Clean cycles per day and cat weight |
+| `GET /api/litterbox/{id}/cats/daily?days=30` | Per cat per day: litter box visits and median weight (readings matched to Whisker pet profiles) |
 | `GET /api/litterbox/{id}/levels?days=7` | Waste drawer % and litter level % over time |
 | `GET /api/litterbox/{id}/drawer?days=90` | Waste drawer: last emptied, cycles since, every empty (inferred), averages, level history |
 | `GET /api/litterbox/{id}/insight` | Whisker's own 30-day cycle summary |

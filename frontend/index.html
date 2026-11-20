@@ -12,6 +12,11 @@
     <div class="viz-root">
       <header class="topbar">
         <h1>Cat Dash</h1>
+        <div class="range" role="radiogroup" aria-label="History range for all charts">
+          <button type="button" role="radio" data-days="7" aria-checked="false">7 days</button>
+          <button type="button" role="radio" data-days="30" aria-checked="true">30 days</button>
+          <button type="button" role="radio" data-days="90" aria-checked="false">90 days</button>
+        </div>
         <span id="live" class="live" data-state="connecting" role="status">
           <span class="live-dot" aria-hidden="true"></span><span class="live-text">Connecting…</span>
         </span>
@@ -20,23 +25,31 @@
       <div id="errors" class="errors" hidden></div>
 
       <main>
-        <section aria-labelledby="now-heading">
-          <h2 id="now-heading" class="section-title">Right now</h2>
-          <div id="cards" class="cards">
-            <p class="muted">Loading devices…</p>
-          </div>
+        <section class="domain domain-litter" aria-labelledby="litter-heading">
+          <header class="domain-head">
+            <svg class="domain-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 10h18l-1.6 8.1A2.4 2.4 0 0 1 17 20H7a2.4 2.4 0 0 1-2.4-1.9L3 10Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M2 10h20M8.5 14.5h.01M12 15.5h.01M15.5 14.5h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M9 7.5c0-1.4 1.3-2.5 3-2.5s3 1.1 3 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <h2 id="litter-heading">Litter box</h2>
+            <p class="domain-sub">Litter-Robot: drawer, cleaning, and who's using it</p>
+          </header>
+          <div id="litter-cards" class="cards"><p class="muted">Loading…</p></div>
+          <div id="litter-charts" class="charts"></div>
         </section>
 
-        <section aria-labelledby="history-heading" class="history">
-          <div class="history-head">
-            <h2 id="history-heading" class="section-title">History</h2>
-            <div class="range" role="radiogroup" aria-label="Date range">
-              <button type="button" role="radio" data-days="7" aria-checked="false">7 days</button>
-              <button type="button" role="radio" data-days="30" aria-checked="true">30 days</button>
-              <button type="button" role="radio" data-days="90" aria-checked="false">90 days</button>
-            </div>
-          </div>
-          <div id="charts" class="charts"></div>
+        <section class="domain domain-food" aria-labelledby="food-heading">
+          <header class="domain-head">
+            <svg class="domain-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12h18a9 9 0 0 1-18 0Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M8 9.5c.8-.9 2-.9 2.8 0M13.2 9.5c.8-.9 2-.9 2.8 0M10.5 6.5c.8-.9 2-.9 2.8 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <h2 id="food-heading">Food</h2>
+            <p class="domain-sub">Petlibro feeders: meals and time spent eating</p>
+          </header>
+          <div id="food-cards" class="cards"><p class="muted">Loading…</p></div>
+          <div id="food-charts" class="charts"></div>
         </section>
       </main>
 

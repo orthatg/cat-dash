@@ -41,6 +41,10 @@ Verified against a live LR4 on 2026-11-20. An anonymized response is in
   drops its value, so the GraphQL activity query is sent directly) and records an empty
   when the level falls to 5% or less from at least 30% (`backend/src/cat_dash/drawer.py`).
   Live: 6 empties in 30 days, about every 5.3 days or 52 cycles. Dips like 92→68 are ignored.
+- **Which cat:** Whisker pet profiles (`Account.load_pets`) give each cat's weight
+  (Zora about 5.4 lb, Maui about 14.7 lb), but per-pet weight history only reaches back
+  about a week. Cat Dash assigns every box weight reading to the nearest profile
+  (`backend/src/cat_dash/cats.py`); this matched Whisker on all 77 overlapping readings.
 - `lastSeen` was 3 days stale on an online, active robot, so it was dropped.
 - History volume is about 60 entries a day (about 1,850 for 30 days). The backfill uses
   limit 5000. Activity entries for `DFILevelPercent` carry no value in `pylitterbot`.
@@ -84,11 +88,9 @@ in `backend/tests/fixtures/petlibro/`.
 
 1. Litter-Robot live push: the websocket subscribes fine, but no push has been seen yet
    (nobody used the box during the 90 s probe).
-2. Cat weights in the litter box may mix several cats (4.8 to 6.1 lbs seen); per-pet
-   attribution would need Whisker pet profiles (`Account.load_pets`).
-3. Whether `grainOutletState == False` means a blockage (always `true` so far).
-4. Whether Cat Dash's Petlibro login signs out the phone app (a separate account is in use).
-5. Whether Whisker limits concurrent sessions (app + Cat Dash).
+2. Whether `grainOutletState == False` means a blockage (always `true` so far).
+3. Whether Cat Dash's Petlibro login signs out the phone app (a separate account is in use).
+4. Whether Whisker limits concurrent sessions (app + Cat Dash).
 
 ## Next
 

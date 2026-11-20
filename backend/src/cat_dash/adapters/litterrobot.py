@@ -24,9 +24,10 @@ from pylitterbot.event import EVENT_UPDATE
 from pylitterbot.exceptions import LitterRobotLoginException
 from pylitterbot.utils import to_timestamp
 
+from ..cats import attribute
 from ..drawer import detect_empties
 from ..hub import Hub
-from ..models import LitterBoxStatus, LitterEvent
+from ..models import CatProfile, LitterBoxStatus, LitterEvent
 from ..store import Store
 
 _LOGGER = logging.getLogger(__name__)
@@ -223,6 +224,7 @@ class LitterRobotAdapter:
         self._latest: dict[str, dict[str, datetime | None]] = {}
         self._last_code: dict[str, str | None] = {}
         self._last_drawer: dict[str, float] = {}
+        self._cats: list[CatProfile] = []
         self._sync_lock = asyncio.Lock()
         self._sync_task: asyncio.Task | None = None
 
@@ -325,6 +327,13 @@ class LitterRobotAdapter:
             status = status_from_robot(robot)
             if latest := self._latest.get(status.device_id):
                 status = status.model_copy(update=latest)
+            if self._cats:
+                status = status.model_copy(
+                    update={
+                        "cats": self._cats,
+                        "last_cat": attribute(status.cat_weight_lbs, self._cats),
+                    }
+                )
             self._hub.update_litter_box(status)
             previous = self._last_code.get(status.device_id, status.status_code)
             self._last_code[status.device_id] = status.status_code
@@ -364,7 +373,28 @@ class LitterRobotAdapter:
         async with self._sync_lock:
             await self._sync_history()
 
+    def cats(self) -> list[CatProfile]:
+        return list(self._cats)
+
+    async def _load_cats(self) -> None:
+        """Whisker pet profiles; failures here never block the rest of the sync."""
+        if not self._account or not hasattr(self._account, "load_pets"):
+            return
+        try:
+            await self._account.load_pets()
+            self._cats = sorted(
+                (
+                    CatProfile(name=pet.name, weight_lbs=float(pet.weight))
+                    for pet in self._account.pets
+                    if pet.name and pet.weight
+                ),
+                key=lambda cat: cat.name,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Could not load Whisker pet profiles", exc_info=True)
+
     async def _sync_history(self) -> None:
+        await self._load_cats()
         for robot in self.robots:
             device_id = str(robot.id)
             # Drawer levels are logged after every cycle, so the latest one is a good

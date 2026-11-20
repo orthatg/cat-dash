@@ -81,7 +81,7 @@ function drawerStatus(box) {
   return "normal";
 }
 
-export function litterCard(box, drawer) {
+export function litterCard(box, drawer, catColors = {}) {
   const [status, label] = litterStatus(box);
   const state = box.waste_drawer_state;
   const drawerHero = state === "empty" ? "Empty" : state === "full" ? "Full" : `${number(box.waste_drawer_percent)}%`;
@@ -109,12 +109,23 @@ export function litterCard(box, drawer) {
     meter("Waste drawer", box.waste_drawer_percent, `${number(box.waste_drawer_percent)}%`, drawerStatus(box)),
     h("dl", { class: "stats" },
       stat("Litter level", `${number(box.litter_level_percent)}%`, box.litter_level_state ? titleCase(box.litter_level_state) : null),
-      stat("Cat weight", box.cat_weight_lbs ? `${number(box.cat_weight_lbs, 2)} lb` : "—"),
-      stat("Last cat visit", relTime(box.last_cat_detected_at)),
+      stat("Last visit", box.last_cat || relTime(box.last_cat_detected_at),
+        box.last_cat ? `${relTime(box.last_cat_detected_at)}, ${number(box.cat_weight_lbs, 2)} lb` : null),
       stat("Last clean cycle", relTime(box.last_clean_cycle_at)),
       stat("Drawer usually emptied", usual || "—"),
       stat("Lifetime cycles", number(box.lifetime_cycles))),
+    box.cats?.length ? catList(box.cats, catColors) : null,
     notes.length ? notesList(notes) : null);
+}
+
+/** "● Zora 5.4 lb  ● Maui 14.7 lb": the cats Whisker tells apart by weight. */
+function catList(cats, catColors) {
+  return h("ul", { class: "cat-list", "aria-label": "Cats using this box" },
+    cats.map((cat) => {
+      const key = h("span", { class: "cat-key" });
+      key.style.background = catColors[cat.name] || "var(--text-muted)";
+      return h("li", {}, key, h("strong", { text: cat.name }), h("span", { text: `${number(cat.weight_lbs, 1)} lb` }));
+    }));
 }
 
 // --- Feeder ---

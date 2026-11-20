@@ -123,3 +123,63 @@ async def test_litter_daily_uses_median_weight(store):
     assert rows == [
         {"date": "2026-11-07", "clean_cycles": 0, "cat_weight_lbs": 5.46, "weight_readings": 4}
     ]
+
+
+def test_attribute_by_nearest_profile():
+    from cat_dash.cats import attribute
+    from cat_dash.models import CatProfile
+
+    cats = [CatProfile(name="Maui", weight_lbs=14.66), CatProfile(name="Zora", weight_lbs=5.38)]
+    assert attribute(5.46, cats) == "Zora"
+    assert attribute(15.99, cats) == "Maui"
+    assert attribute(10.86, cats) == "Maui"
+    assert attribute(25.0, cats) is None  # far from everyone
+    assert attribute(5.4, []) is None
+
+
+async def test_cats_daily_endpoint(store):
+    from cat_dash.models import CatProfile, LitterBoxStatus
+
+    t = datetime(2026, 11, 7, 15, tzinfo=UTC)
+    await store.add_litter_events(
+        [
+            LitterEvent(
+                device_id="box",
+                timestamp=t + timedelta(minutes=i),
+                code=None,
+                text=f"Pet Weight Recorded: {w} lbs",
+                cat_weight_lbs=w,
+            )
+            for i, w in enumerate([5.4, 5.43, 15.99, 5.5, 14.5])
+        ]
+    )
+    hub = Hub()
+    hub.update_litter_box(
+        LitterBoxStatus(
+            device_id="box",
+            name="Box",
+            model="LR4",
+            serial="S",
+            online=True,
+            powered_on=True,
+            status_code="RDY",
+            status_text="Ready",
+            waste_drawer_percent=0,
+            waste_drawer_full=False,
+            litter_level_percent=90,
+            cat_weight_lbs=5.4,
+            sleeping=False,
+            updated_at=t,
+            cats=[
+                CatProfile(name="Maui", weight_lbs=14.66),
+                CatProfile(name="Zora", weight_lbs=5.38),
+            ],
+        )
+    )
+    app = create_app(Settings(_env_file=None, timezone="UTC"), store=store, hub=hub, adapters=[])
+    with TestClient(app) as client:
+        rows = client.get("/api/litterbox/box/cats/daily?days=365").json()
+    assert rows == [
+        {"date": "2026-11-07", "cat": "Maui", "visits": 2, "weight_lbs": 15.25},
+        {"date": "2026-11-07", "cat": "Zora", "visits": 3, "weight_lbs": 5.43},
+    ]
