@@ -290,7 +290,12 @@ function foodCharts(feeds, ctx) {
   // Food dispensed per day, one series per feeder
   const series = feeds.map(({ feeder, daily }) => {
     const byDay = Object.fromEntries(daily.map((d) => [d.date, d.portions]));
-    return { name: feeder.name, color: state.feederColors[feeder.device_id] || SLOTS[0], values: daysList.map((d) => byDay[d] ?? 0) };
+    const cats = state.feederCats[feeder.device_id] || [];
+    return {
+      name: cats.length ? `${cats.join(" & ")} (${feeder.name})` : feeder.name,
+      color: state.feederColors[feeder.device_id] || SLOTS[0],
+      values: daysList.map((d) => byDay[d] ?? 0),
+    };
   });
   cards.push(chartCard({
     title: "Food dispensed per day",
@@ -359,10 +364,18 @@ function setLive(stateName) {
   const el = $("live");
   el.dataset.state = stateName;
   el.querySelector(".live-text").textContent =
-    stateName === "live" ? "Live" : stateName === "down" ? "Disconnected" : "Connecting…";
+    stateName === "live" ? "Live" : stateName === "down" ? "Disconnected" : "Connecting";
+}
+
+function renderToday() {
+  $("today").textContent = new Date().toLocaleDateString([], {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
 }
 
 setupRange();
+renderToday();
 subscribe(onStatus, setLive);
+setInterval(renderToday, 60_000);
 setInterval(renderCards, 30_000); // keep "x min ago" fresh
 setInterval(loadHistory, HISTORY_REFRESH_MS);
