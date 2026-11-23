@@ -82,13 +82,11 @@ function forecastDetail(box, status) {
 /** A small arrow beside a gauge, at its level: which way the level moves with use. */
 function levelArrow(direction, percent, title) {
   const arrow = h("span", { class: `level-arrow ${direction}`, title },
-    pictogram(direction === "up" ? "arrowUp" : "arrowDown", { size: 20, label: title }));
-  // Inside the container, right at the level: "up" sits on the fill's surface,
-  // "down" hangs just under it. Clamped so it never leaves the container.
+    pictogram(direction === "up" ? "arrowUp" : "arrowDown", { size: 16, label: title }));
+  // A badge straddling the level line, inside the container; clamped so it never
+  // leaves it at 0% or 100%. The badge keeps it readable on any fill color.
   const level = Math.max(0, Math.min(100, percent));
-  arrow.style.bottom = direction === "up"
-    ? `min(calc(${level}% + 4px), calc(100% - 26px))`
-    : `max(calc(${level}% - 26px), 4px)`;
+  arrow.style.bottom = `clamp(3px, calc(${level}% - 12px), calc(100% - 27px))`;
   return arrow;
 }
 

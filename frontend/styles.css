@@ -257,10 +257,10 @@ svg .hit:focus-visible { outline: 2px solid var(--ink); }
 .insight-head .who { gap: 8px; }
 
 /* ---------- level direction arrows (subtle) ---------- */
-.level-arrow { position: absolute; left: 50%; transform: translateX(-50%); line-height: 0; z-index: 2; pointer-events: auto; }
-.level-arrow.up { color: var(--ink-2); }
-.level-arrow.down { color: #2a2418; }   /* dark ink on the sand */
-.level-arrow .picto { stroke-width: 2.4; }
+.level-arrow { position: absolute; left: 50%; transform: translateX(-50%); z-index: 2;
+  width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--tile); color: var(--ink); box-shadow: 0 0 0 1.5px var(--ink-2), 0 1px 3px rgba(0, 0, 0, 0.25); }
+.level-arrow .picto { stroke-width: 2.6; }
 
 /* ---------- activity: last visit + since clean ---------- */
 .tile-activity { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
