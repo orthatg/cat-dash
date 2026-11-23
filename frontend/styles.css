@@ -19,8 +19,8 @@
   --grid: #ecebe6;
   --axis: #c9c7c0;
   /* Named cat colors, sampled from their portraits (validated as a pair, light + dark) */
-  --cat-zora: #76675a;        /* gray-taupe coat */
-  --cat-maui: #cc6a1e;        /* dark orange coat */
+  --cat-zora: #989088;        /* gray coat */
+  --cat-maui: #9e5620;        /* dark orange stripes */
   --series-1: #2b5c9e;
   --series-2: #c4572e;
   --series-3: #6b6d71;
@@ -48,10 +48,10 @@
     --line: #2a2b2f;
     --grid: #26272a;
     --axis: #3d3f43;
-    --cat-zora: #c2b298;
-    --cat-maui: #c45a1a;
-    --cat-zora: #c2b298;
-  --cat-maui: #c45a1a;
+    --cat-zora: #d1c7bd;
+    --cat-maui: #ae5a1e;
+    --cat-zora: #d1c7bd;
+  --cat-maui: #ae5a1e;
   --series-1: #5b8bd6;
     --series-2: #d4683c;
     --series-3: #9a9ca0;
@@ -75,8 +75,8 @@
   --line: #2a2b2f;
   --grid: #26272a;
   --axis: #3d3f43;
-  --cat-zora: #c2b298;
-  --cat-maui: #c45a1a;
+  --cat-zora: #d1c7bd;
+  --cat-maui: #ae5a1e;
   --series-1: #5b8bd6;
   --series-2: #d4683c;
   --series-3: #9a9ca0;
