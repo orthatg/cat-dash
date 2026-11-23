@@ -20,9 +20,11 @@ from .config import Settings
 
 
 def _login(settings: Settings, integration: str) -> str | None:
-    return (
-        settings.litterrobot_username if integration == "litterrobot" else settings.petlibro_email
-    )
+    return {
+        "litterrobot": settings.litterrobot_username,
+        "petlibro": settings.petlibro_email,
+        "roomba": settings.roomba_blid,  # the robot's BLID acts as its login
+    }[integration]
 
 
 def main(argv: list[str] | None = None) -> int:

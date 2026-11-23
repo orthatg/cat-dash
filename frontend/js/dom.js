@@ -33,6 +33,14 @@ const ICONS = {
   x: '<circle cx="12" cy="12" r="8"/><path d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
   arrowUp: '<path d="M12 19V5M6.5 10.5 12 5l5.5 5.5"/>',
+  robot: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.8"/><path d="M12 3.5v2.2M7 6.4l1.3 1.6"/>',
+  battery: '<rect x="3" y="8" width="16" height="9" rx="2.5"/><path d="M21.5 11v3"/>',
+  bolt: '<path d="M13 3.5 6.5 13H12l-1 7.5 6.5-9.5H12l1-7.5Z"/>',
+  dock: '<path d="m4 11.5 8-7 8 7"/><path d="M6.5 10v9.5h11V10"/>',
+  pause: '<rect x="7" y="5.5" width="3.5" height="13" rx="1"/><rect x="13.5" y="5.5" width="3.5" height="13" rx="1"/>',
+  help: '<circle cx="12" cy="12" r="8"/><path d="M9.8 9.7a2.3 2.3 0 0 1 4.4.8c0 1.5-2.2 1.7-2.2 3.2M12 16.6h.01"/>',
+  wifi: '<path d="M4 9.5a12 12 0 0 1 16 0M7 13a7.5 7.5 0 0 1 10 0M10 16.4a3 3 0 0 1 4 0M12 19.5h.01"/>',
+  bin: '<path d="M6 7h12l-1 12.5a1.5 1.5 0 0 1-1.5 1.4h-7A1.5 1.5 0 0 1 7 19.5L6 7Z"/><path d="M4.5 7h15M9.5 7V4.5h5V7"/>',
   arrowDown: '<path d="M12 5v14M6.5 13.5 12 19l5.5-5.5"/>',
 };
 
@@ -63,7 +71,8 @@ export function errorsBanner(container, status) {
   const label = (name) => (name === "litterrobot" ? "Litter-Robot" : name === "petlibro" ? "Petlibro" : name);
   for (const [name, message] of Object.entries(status.errors || {})) messages.push(`${label(name)}: ${message}`);
   for (const [name, ok] of Object.entries(status.configured || {})) {
-    if (!ok) messages.push(`${label(name)} isn't configured (see backend/README.md).`);
+    if (!ok && name !== "roomba") // the Roomba tile has its own calm "not set up yet" state
+      messages.push(`${label(name)} isn't configured (see backend/README.md).`);
   }
   container.hidden = messages.length === 0;
   for (const message of messages) container.append(h("p", {}, pictogram("alert", { size: 16 }), h("span", { text: message })));

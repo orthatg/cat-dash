@@ -25,6 +25,14 @@ from .hub import Hub
 from .insights import meal_timing, merge_visits, visit_gaps
 from .models import DashboardStatus, DrawerEmptied, FeedEvent, LitterEvent, PetVisit
 from .petlibro import PetlibroClient
+from .roomba import (
+    MqttRoombaClient,
+    RoombaAuthError,
+    RoombaError,
+    RoombaService,
+    RoombaStatus,
+    RoombaTimeout,
+)
 from .store import Store
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,12 +86,30 @@ def build_adapters(settings: Settings, hub: Hub, store: Store) -> list:
     return adapters
 
 
+def build_roomba(settings: Settings) -> RoombaService | None:
+    password = settings.roomba_password_value()
+    if not (settings.roomba_host and settings.roomba_blid and password):
+        _LOGGER.warning(
+            "Roomba not configured; set CATDASH_ROOMBA_HOST/CATDASH_ROOMBA_BLID in .env and run "
+            "`uv run cat-dash-secrets set roomba`"
+        )
+        return None
+    client = MqttRoombaClient(settings.roomba_host, settings.roomba_blid, password)
+    return RoombaService(
+        client,
+        device_id=settings.roomba_blid,
+        timezone=settings.timezone,
+        cache_seconds=settings.roomba_cache_seconds,
+    )
+
+
 def create_app(
     settings: Settings | None = None,
     *,
     store: Store | None = None,
     hub: Hub | None = None,
     adapters: list | None = None,
+    roomba: RoombaService | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     hub = hub or Hub()
@@ -91,6 +117,9 @@ def create_app(
     tz = ZoneInfo(settings.timezone)
     if adapters is None:
         adapters = build_adapters(settings, hub, store)
+    if roomba is None:
+        roomba = build_roomba(settings)
+    hub.set_configured("roomba", roomba is not None)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -127,6 +156,20 @@ def create_app(
     @app.get("/api/status", response_model=DashboardStatus)
     async def status() -> DashboardStatus:
         return hub.snapshot()
+
+    @app.get("/api/roomba/status", response_model=RoombaStatus)
+    async def roomba_status(refresh: bool = False) -> RoombaStatus:
+        """Live Roomba status, fetched from the robot on request (cached ~30 s)."""
+        if roomba is None:
+            raise HTTPException(503, "Roomba not configured")
+        try:
+            return await roomba.status(refresh=refresh)
+        except RoombaAuthError as err:
+            raise HTTPException(502, f"Roomba rejected the credentials: {err}") from err
+        except RoombaTimeout as err:
+            raise HTTPException(504, str(err)) from err
+        except RoombaError as err:
+            raise HTTPException(502, f"Roomba unreachable: {err}") from err
 
     @app.get("/api/stream")
     async def stream(request: Request) -> StreamingResponse:

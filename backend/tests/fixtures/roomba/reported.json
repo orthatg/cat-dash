@@ -1,0 +1,114 @@
+{
+  "name": "Roomba",
+  "sku": "i755020",
+  "softwareVer": "v3.2.x-SYNTHETIC",
+  "batPct": 87,
+  "cleanMissionStatus": {
+    "cycle": "none",
+    "phase": "charge",
+    "expireM": 0,
+    "rechrgM": 0,
+    "error": 0,
+    "notReady": 0,
+    "mssnM": 42,
+    "sqft": 310,
+    "initiator": "schedule",
+    "nMssn": 214
+  },
+  "lastCommand": {
+    "command": "start",
+    "time": 1795440000,
+    "initiator": "schedule"
+  },
+  "bin": {
+    "present": true,
+    "full": false
+  },
+  "cleanSchedule": {
+    "cycle": [
+      "none",
+      "start",
+      "start",
+      "start",
+      "start",
+      "start",
+      "none"
+    ],
+    "h": [
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10
+    ],
+    "m": [
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30
+    ]
+  },
+  "bbmssn": {
+    "nMssn": 214,
+    "nMssnOk": 198,
+    "nMssnC": 12,
+    "nMssnF": 4,
+    "aMssnM": 38,
+    "aCycleM": 35
+  },
+  "bbrun": {
+    "hr": 150,
+    "min": 12,
+    "sqft": 61200,
+    "nStuck": 9,
+    "nScrubs": 0,
+    "nPicks": 31,
+    "nPanics": 14,
+    "nCliffsF": 220,
+    "nCliffsR": 190,
+    "nMBStll": 3,
+    "nWStll": 1,
+    "nCBump": 40
+  },
+  "bbchg3": {
+    "avgMin": 61,
+    "hOnDock": 900,
+    "nAvail": 700,
+    "estCap": 3050,
+    "nLithChrg": 260,
+    "nNimhChrg": 0,
+    "nDocks": 215
+  },
+  "bbchg": {
+    "nChgOk": 258,
+    "nLithF": 0,
+    "aborts": [
+      0,
+      0,
+      0
+    ]
+  },
+  "bbswitch": {
+    "nBumper": 1200,
+    "nClean": 300,
+    "nSpot": 4,
+    "nDock": 215,
+    "nDrops": 10
+  },
+  "bbsys": {
+    "hr": 1900,
+    "min": 5
+  },
+  "signal": {
+    "rssi": -52,
+    "snr": 38
+  },
+  "dock": {
+    "known": true
+  }
+}

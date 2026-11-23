@@ -3,10 +3,21 @@
 
 const BASE = (window.CAT_DASH_API || "").replace(/\/$/, "");
 
-async function get(path) {
-  const response = await fetch(`${BASE}${path}`, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  return response.json();
+async function get(path, { timeoutMs } = {}) {
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller && setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${BASE}${path}`, { headers: { Accept: "application/json" }, signal: controller?.signal });
+    if (!response.ok) {
+      const err = new Error(`${path}: HTTP ${response.status}`);
+      err.status = response.status;
+      err.detail = await response.json().then((body) => body?.detail, () => undefined);
+      throw err;
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const enc = encodeURIComponent;
@@ -18,6 +29,8 @@ export const api = {
   litterCatsDaily: (id, days) => get(`/api/litterbox/${enc(id)}/cats/daily?days=${days}`),
   feederDaily: (id, days) => get(`/api/feeder/${enc(id)}/daily?days=${days}`),
   insights: (days) => get(`/api/insights?days=${days}`),
+  // The robot allows one local connection and answers slowly (up to ~15 s): not on the SSE stream.
+  roombaStatus: (refresh = false) => get(`/api/roomba/status${refresh ? "?refresh=true" : ""}`, { timeoutMs: 25_000 }),
   feederVisitsDaily: (id, days) => get(`/api/feeder/${enc(id)}/visits/daily?days=${days}`),
 };
 

@@ -15,7 +15,7 @@ from keyring.errors import KeyringError
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE = "cat-dash"
-INTEGRATIONS = ("litterrobot", "petlibro")
+INTEGRATIONS = ("litterrobot", "petlibro", "roomba")
 
 
 def _account(integration: str, login: str) -> str:
