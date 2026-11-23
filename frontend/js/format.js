@@ -129,3 +129,22 @@ export function shortAgo(value, now = Date.now()) {
   if (minutes < 48 * 60) return `${Math.round(minutes / 60)}h`;
   return `${Math.round(minutes / (24 * 60))}d`;
 }
+
+/** Compact time until: "45m", "22h", "3d". */
+export function shortIn(value, now = Date.now()) {
+  const d = toDate(value);
+  if (!d) return "—";
+  const minutes = Math.max(0, Math.round((d.getTime() - now) / MIN));
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)}h`;
+  return `${Math.round(minutes / (24 * 60))}d`;
+}
+
+/** "Wed 9am" */
+export function weekdayTime(value) {
+  const d = toDate(value);
+  if (!d) return "—";
+  const hour = d.getHours();
+  const h12 = hour % 12 || 12;
+  return `${d.toLocaleDateString([], { weekday: "short" })} ${h12}${hour < 12 ? "am" : "pm"}`;
+}

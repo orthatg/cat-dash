@@ -139,6 +139,8 @@ main { display: grid; gap: 14px; }
 .drawer-read .big { font-size: clamp(72px, 9vw, 112px); margin: 0; letter-spacing: -0.04em; }
 .when { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; white-space: nowrap; font: 600 22px/1 var(--round); color: var(--ink-2); }
 .when .picto { width: 24px; height: 24px; }
+.when-detail span { white-space: nowrap; }
+.when-detail { margin-top: 6px; font-size: 13px; line-height: 1.4; color: var(--ink-3); max-width: 220px; font-variant-numeric: tabular-nums; }
 .tile-drawer[data-status="warning"] .when { color: var(--warning); }
 .tile-drawer[data-status="critical"] .when { color: var(--critical); }
 

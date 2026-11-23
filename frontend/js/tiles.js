@@ -2,7 +2,7 @@
 
 import { columnChart } from "./charts.js";
 import { h, pictogram } from "./dom.js";
-import { clock, dayPart, number, shortAgo, shortDate, titleCase } from "./format.js";
+import { clock, dayPart, number, shortAgo, shortDate, shortIn, titleCase, weekdayTime } from "./format.js";
 
 function catDot(color) {
   const dot = h("span", { class: "dot", "aria-hidden": "true" });
@@ -63,7 +63,26 @@ export function drawerTile(box) {
     bin,
     h("div", { class: "drawer-read" },
       h("div", { class: "big" }, h("span", { text: number(pct) }), h("span", { class: "unit", text: "%" })),
-      when));
+      when,
+      forecastDetail(box, status)));
+}
+
+/** The numbers behind the date: "in 22h · at 82% · full Wed 9am". */
+function forecastDetail(box, status) {
+  if (!box.drawer_needs_emptying_at) return null;
+  const parts = [];
+  if (status === "ok") {
+    parts.push(`in ${shortIn(box.drawer_needs_emptying_at)}`);
+    if (box.drawer_usual_empty_percent) parts.push(`at ${number(box.drawer_usual_empty_percent)}%`);
+  }
+  if (box.drawer_full_at && status !== "critical") {
+    parts.push(`full ${weekdayTime(box.drawer_full_at)}`);
+  }
+  if (box.drawer_fill_rate_per_day) parts.push(`+${number(box.drawer_fill_rate_per_day)}%/day`);
+  // Each item stays whole; the line only breaks between items.
+  return parts.length
+    ? h("div", { class: "when-detail" }, parts.map((part, i) => [i ? " · " : null, h("span", { text: part })]))
+    : null;
 }
 
 export function statTile({ picto, value, unit, caption, extra, title }) {
