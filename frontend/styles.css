@@ -260,7 +260,7 @@ svg .hit:focus-visible { outline: 2px solid var(--ink); }
 /* A plain arrow with a halo in the tile color (no badge, so it doesn't read as a button). */
 .level-arrow { position: absolute; left: 50%; transform: translateX(-50%); z-index: 2;
   width: 24px; height: 24px; display: grid; place-items: center; color: var(--ink); cursor: default;
-  filter: drop-shadow(0 0 1px var(--tile)) drop-shadow(0 0 2px var(--tile)) drop-shadow(0 0 3px var(--tile)); }
+  filter: drop-shadow(0 0 1px var(--tile)); }
 .level-arrow .picto { width: 20px; height: 20px; stroke-width: 2.6; }
 
 /* ---------- activity: last visit + since clean ---------- */
