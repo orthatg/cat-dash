@@ -69,14 +69,17 @@ export function errorsBanner(container, status) {
   for (const message of messages) container.append(h("p", {}, pictogram("alert", { size: 16 }), h("span", { text: message })));
 }
 
-// Cat portraits live in assets/cats/<name>.jpg (lower-case). Missing file -> colored dot.
-export function catAvatar(name, color, size = 32) {
+// Cat portraits live in assets/cats/<name>.jpg (lower-case). Missing file -> colored disc.
+// `size` is the whole circle; `image` is the picture inside it. Growing the circle twice as
+// fast as the picture leaves a white margin, so the drawing sits inside the ring.
+export function catAvatar(name, color, { size = 32, image = size } = {}) {
   const wrap = h("span", { class: "avatar", "aria-hidden": "true" });
   wrap.style.setProperty("--ring", color || "var(--ink-3)");
   wrap.style.width = wrap.style.height = `${size}px`;
   if (!name) return wrap;
   const img = h("img", { src: `assets/cats/${encodeURIComponent(name.toLowerCase())}.jpg`, alt: "", loading: "lazy", decoding: "async" });
-  img.addEventListener("error", () => img.remove(), { once: true });
+  img.style.width = img.style.height = `${image}px`;
+  img.addEventListener("error", () => { img.remove(); wrap.classList.add("no-photo"); }, { once: true });
   wrap.append(img);
   return wrap;
 }

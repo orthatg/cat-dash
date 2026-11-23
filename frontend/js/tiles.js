@@ -99,7 +99,7 @@ function activityTile(box, catColors) {
   return h("article", { class: "tile tile-activity",
     "aria-label": `Last visit ${shortAgo(box.last_cat_detected_at)} ago${who ? ` by ${who}` : ""}; cleaned ${shortAgo(box.last_clean_cycle_at)} ago` },
     h("div", { class: "act-main" },
-      who ? catAvatar(who, catColors[who], 56) : h("span", { class: "act-icon" }, pictogram("paw", { size: 28 })),
+      who ? catAvatar(who, catColors[who], { size: 80, image: 68 }) : h("span", { class: "act-icon" }, pictogram("paw", { size: 28 })),
       h("div", {},
         h("div", { class: "big" }, h("span", { text: ago.value }), h("span", { class: "unit", text: ago.unit })),
         h("div", { class: "caption act-caption" }, pictogram("paw", { size: 14 }),
@@ -142,7 +142,7 @@ export function feederTile(feeder, cats, catColors) {
     warnings.push(`Desiccant overdue by ${number(-feeder.desiccant_days_left)} days`);
   }
   const name = cats?.length
-    ? h("div", { class: "who big-who" }, cats.map((cat) => [catAvatar(cat, catColors[cat], 40), h("span", { text: cat })]))
+    ? h("div", { class: "who big-who" }, cats.map((cat) => [catAvatar(cat, catColors[cat], { size: 56, image: 48 }), h("span", { text: cat })]))
     : h("div", { class: "who big-who" }, h("span", { text: feeder.name }));
   const food = h("span", {
     class: "food", "data-status": problems.length ? "critical" : low ? "warning" : "ok",
@@ -171,7 +171,7 @@ function insightBlock(cat, color, headline, sub, draw) {
   responsive(chart, draw);
   return h("div", { class: "insight" },
     h("div", { class: "insight-head" },
-      h("div", { class: "who" }, catAvatar(cat, color, 30), h("span", { text: cat })),
+      h("div", { class: "who" }, catAvatar(cat, color, { size: 40, image: 35 }), h("span", { text: cat })),
       h("div", { class: "insight-num" }, headline),
       h("div", { class: "insight-sub", text: sub })),
     chart);
