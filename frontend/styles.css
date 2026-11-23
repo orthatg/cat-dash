@@ -1,7 +1,8 @@
 /* Cat Dash: a calm, glanceable home panel. Big rounded numerals, pictograms instead of
    sentences, flat tiles with no borders or shadows, details on hover or behind "More".
-   Only the cats get color (blue / terracotta, validated for CVD + normal vision on these
-   tile surfaces in light and dark). Status colors are reserved and paired with a symbol. */
+   Only the cats get color: each known cat has a named color from their portrait
+   (--cat-<name>; validated for CVD + normal vision on these tiles, light and dark), and
+   any other cat falls back to the series slots. Status colors are reserved and paired with a symbol. */
 
 .viz-root {
   color-scheme: light;
@@ -17,6 +18,9 @@
   --text-muted: var(--ink-3);
   --grid: #ecebe6;
   --axis: #c9c7c0;
+  /* Named cat colors, sampled from their portraits (validated as a pair, light + dark) */
+  --cat-zora: #76675a;        /* gray-taupe coat */
+  --cat-maui: #cc6a1e;        /* dark orange coat */
   --series-1: #2b5c9e;
   --series-2: #c4572e;
   --series-3: #6b6d71;
@@ -44,7 +48,11 @@
     --line: #2a2b2f;
     --grid: #26272a;
     --axis: #3d3f43;
-    --series-1: #5b8bd6;
+    --cat-zora: #c2b298;
+    --cat-maui: #c45a1a;
+    --cat-zora: #c2b298;
+  --cat-maui: #c45a1a;
+  --series-1: #5b8bd6;
     --series-2: #d4683c;
     --series-3: #9a9ca0;
     --series-4: #5d5f63;
@@ -67,6 +75,8 @@
   --line: #2a2b2f;
   --grid: #26272a;
   --axis: #3d3f43;
+  --cat-zora: #c2b298;
+  --cat-maui: #c45a1a;
   --series-1: #5b8bd6;
   --series-2: #d4683c;
   --series-3: #9a9ca0;

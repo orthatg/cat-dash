@@ -51,12 +51,19 @@ function assignColors(feederVisits, litterCats) {
   const feederColors = {};
   let next = 0;
   const take = () => SLOTS[next++ % SLOTS.length];
+  // A cat with its own --cat-<name> color in styles.css keeps it; others take a slot.
+  const style = getComputedStyle(document.querySelector(".viz-root"));
+  const named = (cat) => {
+    const token = `--cat-${cat.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    return style.getPropertyValue(token).trim() ? `var(${token})` : null;
+  };
+  const colorFor = (cat) => named(cat) || take();
   for (const { feeder, cats } of feederVisits) {
-    for (const cat of cats) if (!catColors[cat]) catColors[cat] = take();
+    for (const cat of cats) if (!catColors[cat]) catColors[cat] = colorFor(cat);
     feederColors[feeder.device_id] = cats.length === 1 ? catColors[cats[0]] : take();
     state.feederCats[feeder.device_id] = cats;
   }
-  for (const cat of litterCats.slice().sort()) if (!catColors[cat]) catColors[cat] = take();
+  for (const cat of litterCats.slice().sort()) if (!catColors[cat]) catColors[cat] = colorFor(cat);
   state.catColors = catColors;
   state.feederColors = feederColors;
 }
