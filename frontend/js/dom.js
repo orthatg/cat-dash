@@ -32,6 +32,8 @@ const ICONS = {
   check: '<circle cx="12" cy="12" r="8"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>',
   x: '<circle cx="12" cy="12" r="8"/><path d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
+  arrowUp: '<path d="M12 19V5M6.5 10.5 12 5l5.5 5.5"/>',
+  arrowDown: '<path d="M12 5v14M6.5 13.5 12 19l5.5-5.5"/>',
 };
 
 export function pictogram(name, { size = 20, label } = {}) {
@@ -65,4 +67,16 @@ export function errorsBanner(container, status) {
   }
   container.hidden = messages.length === 0;
   for (const message of messages) container.append(h("p", {}, pictogram("alert", { size: 16 }), h("span", { text: message })));
+}
+
+// Cat portraits live in assets/cats/<name>.jpg (lower-case). Missing file -> colored dot.
+export function catAvatar(name, color, size = 32) {
+  const wrap = h("span", { class: "avatar", "aria-hidden": "true" });
+  wrap.style.setProperty("--ring", color || "var(--ink-3)");
+  wrap.style.width = wrap.style.height = `${size}px`;
+  if (!name) return wrap;
+  const img = h("img", { src: `assets/cats/${encodeURIComponent(name.toLowerCase())}.jpg`, alt: "", loading: "lazy", decoding: "async" });
+  img.addEventListener("error", () => img.remove(), { once: true });
+  wrap.append(img);
+  return wrap;
 }

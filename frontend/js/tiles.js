@@ -1,14 +1,8 @@
 // Glanceable tiles: big numbers, pictograms instead of sentences, details on hover.
 
 import { columnChart } from "./charts.js";
-import { h, pictogram } from "./dom.js";
+import { catAvatar, h, pictogram } from "./dom.js";
 import { clock, dayPart, number, shortAgo, shortDate, shortIn, titleCase, weekdayTime } from "./format.js";
-
-function catDot(color) {
-  const dot = h("span", { class: "dot", "aria-hidden": "true" });
-  dot.style.background = color || "var(--ink-3)";
-  return dot;
-}
 
 /** Redraw a chart whenever its box changes width. */
 function responsive(el, draw) {
@@ -46,7 +40,7 @@ export function drawerTile(box) {
     class: "bin", role: "meter", "aria-label": "Waste drawer",
     "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(pct)),
     "aria-valuetext": `${number(pct)}% full${usual ? `, usually emptied at ${number(usual)}%` : ""}`,
-  }, h("div", { class: "bin-body" }, fill), usualLine);
+  }, h("div", { class: "bin-body" }, fill), usualLine, levelArrow("up", pct, "Fills up as it's used"));
 
   const dueText = box.drawer_needs_emptying_at
     ? `Empty it by ${dayPart(box.drawer_needs_emptying_at)} (around ${number(usual)}%). Full around ${dayPart(box.drawer_full_at)}.`
@@ -85,35 +79,56 @@ function forecastDetail(box, status) {
     : null;
 }
 
-export function statTile({ picto, value, unit, caption, extra, title }) {
-  return h("article", { class: "tile tile-stat", title },
-    h("div", { class: "tile-top" }, pictogram(picto), h("span", { class: "caption", text: caption })),
-    h("div", { class: "big" }, h("span", { text: value }), unit ? h("span", { class: "unit", text: unit }) : null),
-    extra);
+/** A small arrow beside a gauge, at its level: which way the level moves with use. */
+function levelArrow(direction, percent, title) {
+  const arrow = h("span", { class: `level-arrow ${direction}`, title },
+    pictogram(direction === "up" ? "arrowUp" : "arrowDown", { size: 20, label: title }));
+  arrow.style.bottom = `${Math.max(0, Math.min(100, percent))}%`;
+  return arrow;
 }
 
-export function litterTiles(box, catColors) {
+/** Last visit (who + how long ago) and time since the last clean, in one tile. */
+function activityTile(box, catColors) {
   const ago = splitAgo(box.last_cat_detected_at);
   const clean = splitAgo(box.last_clean_cycle_at);
-  const litterBar = h("div", { class: "mini-bar", "aria-hidden": "true" }, h("span"));
-  litterBar.firstChild.style.width = `${Math.min(100, box.litter_level_percent ?? 0)}%`;
   const issues = [];
   if (!box.online) issues.push("Offline");
   else if (!box.powered_on) issues.push("Off");
   if (box.sleeping) issues.push("Sleep mode");
-  return [
-    drawerTile(box),
-    statTile({
-      picto: "paw", caption: "last visit", value: ago.value, unit: ago.unit,
-      extra: box.last_cat ? h("div", { class: "who" }, catDot(catColors[box.last_cat]), h("span", { text: box.last_cat })) : null,
-    }),
-    statTile({ picto: "sparkle", caption: "since clean", value: clean.value, unit: clean.unit,
-      extra: issues.length ? h("div", { class: "who warn" }, pictogram("alert", { size: 14 }), h("span", { text: issues.join(" · ") })) : null }),
-    statTile({
-      picto: "litter", caption: "litter", value: number(box.litter_level_percent), unit: "%",
-      title: box.litter_level_state ? titleCase(box.litter_level_state) : null, extra: litterBar,
-    }),
-  ];
+  const who = box.last_cat;
+  return h("article", { class: "tile tile-activity",
+    "aria-label": `Last visit ${shortAgo(box.last_cat_detected_at)} ago${who ? ` by ${who}` : ""}; cleaned ${shortAgo(box.last_clean_cycle_at)} ago` },
+    h("div", { class: "act-main" },
+      who ? catAvatar(who, catColors[who], 56) : h("span", { class: "act-icon" }, pictogram("paw", { size: 28 })),
+      h("div", {},
+        h("div", { class: "big" }, h("span", { text: ago.value }), h("span", { class: "unit", text: ago.unit })),
+        h("div", { class: "caption act-caption" }, pictogram("paw", { size: 14 }),
+          h("span", { text: who ? `${who} visited` : "last visit" })))),
+    h("div", { class: "act-clean" }, pictogram("sparkle", { size: 18 }),
+      h("span", { class: "mid" }, h("strong", { text: clean.value }), h("span", { text: clean.unit })),
+      h("span", { class: "caption", text: "since clean" })),
+    issues.length ? h("div", { class: "who warn" }, pictogram("alert", { size: 14 }), h("span", { text: issues.join(" · ") })) : null);
+}
+
+/** Litter: a tub filled with litter to the current level; the level drains with use. */
+function litterTile(box) {
+  const pct = Math.max(0, Math.min(100, box.litter_level_percent ?? 0));
+  const fill = h("div", { class: "tub-fill" });
+  fill.style.height = `${pct}%`;
+  const state = box.litter_level_state ? titleCase(box.litter_level_state) : null;
+  const low = box.litter_level_state && box.litter_level_state !== "OPTIMAL";
+  return h("article", { class: "tile tile-litter", "data-status": low ? "warning" : "ok" },
+    h("div", { class: "tile-top" }, pictogram("litter"), h("span", { class: "caption", text: "litter" })),
+    h("div", { class: "litter-viz" },
+      h("div", { class: "tub", role: "meter", "aria-label": "Litter level",
+        "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(pct)),
+        "aria-valuetext": `${number(pct)}% litter${state ? `, ${state}` : ""}` },
+      h("div", { class: "tub-body" }, fill), levelArrow("down", pct, "Goes down as it's used")),
+      h("div", { class: "big", title: state }, h("span", { text: number(pct) }), h("span", { class: "unit", text: "%" }))));
+}
+
+export function litterTiles(box, catColors) {
+  return [drawerTile(box), activityTile(box, catColors), litterTile(box)];
 }
 
 // ---------- feeders ----------
@@ -127,7 +142,7 @@ export function feederTile(feeder, cats, catColors) {
     warnings.push(`Desiccant overdue by ${number(-feeder.desiccant_days_left)} days`);
   }
   const name = cats?.length
-    ? h("div", { class: "who big-who" }, cats.map((cat) => [catDot(catColors[cat]), h("span", { text: cat })]))
+    ? h("div", { class: "who big-who" }, cats.map((cat) => [catAvatar(cat, catColors[cat], 40), h("span", { text: cat })]))
     : h("div", { class: "who big-who" }, h("span", { text: feeder.name }));
   const food = h("span", {
     class: "food", "data-status": problems.length ? "critical" : low ? "warning" : "ok",
@@ -156,7 +171,7 @@ function insightBlock(cat, color, headline, sub, draw) {
   responsive(chart, draw);
   return h("div", { class: "insight" },
     h("div", { class: "insight-head" },
-      h("div", { class: "who" }, catDot(color), h("span", { text: cat })),
+      h("div", { class: "who" }, catAvatar(cat, color, 30), h("span", { text: cat })),
       h("div", { class: "insight-num" }, headline),
       h("div", { class: "insight-sub", text: sub })),
     chart);
