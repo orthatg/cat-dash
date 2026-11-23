@@ -83,7 +83,12 @@ function forecastDetail(box, status) {
 function levelArrow(direction, percent, title) {
   const arrow = h("span", { class: `level-arrow ${direction}`, title },
     pictogram(direction === "up" ? "arrowUp" : "arrowDown", { size: 20, label: title }));
-  arrow.style.bottom = `${Math.max(0, Math.min(100, percent))}%`;
+  // Inside the container, right at the level: "up" sits on the fill's surface,
+  // "down" hangs just under it. Clamped so it never leaves the container.
+  const level = Math.max(0, Math.min(100, percent));
+  arrow.style.bottom = direction === "up"
+    ? `min(calc(${level}% + 4px), calc(100% - 26px))`
+    : `max(calc(${level}% - 26px), 4px)`;
   return arrow;
 }
 

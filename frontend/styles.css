@@ -257,8 +257,10 @@ svg .hit:focus-visible { outline: 2px solid var(--ink); }
 .insight-head .who { gap: 8px; }
 
 /* ---------- level direction arrows (subtle) ---------- */
-.level-arrow { position: absolute; right: -30px; transform: translateY(50%); color: var(--ink-2); opacity: 0.75; line-height: 0; }
-.bin .level-arrow { right: -38px; }
+.level-arrow { position: absolute; left: 50%; transform: translateX(-50%); line-height: 0; z-index: 2; pointer-events: auto; }
+.level-arrow.up { color: var(--ink-2); }
+.level-arrow.down { color: #2a2418; }   /* dark ink on the sand */
+.level-arrow .picto { stroke-width: 2.4; }
 
 /* ---------- activity: last visit + since clean ---------- */
 .tile-activity { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
