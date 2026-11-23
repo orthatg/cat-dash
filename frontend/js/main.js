@@ -2,6 +2,7 @@ import { api, subscribe } from "./api.js";
 import { chartCard, columnChart, lineChart } from "./charts.js";
 import { errorsBanner, h } from "./dom.js";
 import { dayPart, longDateTime, number, parseDay, shortDay } from "./format.js";
+import { mountRoomba } from "./roomba.js";
 import { feederTile, gapsTile, litterTiles, mealsTile } from "./tiles.js";
 
 // Identity colors (fixed slot per entity, never by rank). A cat keeps the same color in
@@ -431,6 +432,7 @@ function renderToday() {
 
 setupRange();
 renderToday();
+mountRoomba($("roomba-tiles"));
 subscribe(onStatus, setLive);
 setInterval(renderToday, 60_000);
 setInterval(renderCards, 30_000); // keep "x min ago" fresh

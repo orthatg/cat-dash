@@ -5,6 +5,8 @@ description = "Cat Dash backend: Litter-Robot 4 and Petlibro feeder status and h
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    # Roomba local MQTT. <3: aiomqtt 3 is MQTT5-only and the robots speak 3.1.1.
+    "aiomqtt>=2.5,<3.0",
     "fastapi>=0.165.0",
     "httpx>=0.28.1",
     "keyring>=25.7.0",

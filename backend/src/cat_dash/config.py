@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     petlibro_password: SecretStr | None = None
     petlibro_region: str = "US"
 
+    # Roomba i7+ over the local network (MQTT, port 8883). BLID is the robot's username.
+    roomba_host: str | None = None
+    roomba_blid: str | None = None
+    roomba_password: SecretStr | None = None
+    roomba_cache_seconds: float = 30.0
+
     timezone: str = "America/Chicago"
     petlibro_poll_seconds: int = 60
     litterrobot_history_poll_seconds: int = 900
@@ -37,6 +43,9 @@ class Settings(BaseSettings):
         "litterrobot_password",
         "petlibro_email",
         "petlibro_password",
+        "roomba_host",
+        "roomba_blid",
+        "roomba_password",
         mode="before",
     )
     @classmethod
@@ -57,6 +66,15 @@ class Settings(BaseSettings):
         if self.petlibro_password:
             return self.petlibro_password.get_secret_value()
         return secrets.get_password("petlibro", self.petlibro_email)
+
+    def roomba_password_value(self) -> str | None:
+        if self.roomba_password:
+            return self.roomba_password.get_secret_value()
+        return secrets.get_password("roomba", self.roomba_blid)
+
+    @property
+    def roomba_configured(self) -> bool:
+        return bool(self.roomba_host and self.roomba_blid and self.roomba_password_value())
 
     @property
     def litterrobot_configured(self) -> bool:
