@@ -1,9 +1,10 @@
 import { api, subscribe } from "./api.js";
+import { collectProblems, renderAttention } from "./attention.js";
 import { chartCard, columnChart, lineChart } from "./charts.js";
 import { errorsBanner, h } from "./dom.js";
 import { dayPart, longDateTime, number, parseDay, shortDay } from "./format.js";
 import { mountRoomba } from "./roomba.js";
-import { feederTile, gapsTile, litterTiles, mealsTile } from "./tiles.js";
+import { feedersPanel, gapsTile, litterTiles, mealsTile } from "./tiles.js";
 
 // Identity colors (fixed slot per entity, never by rank). A cat keeps the same color in
 // both sections; a feeder takes its cat's color when it serves one cat.
@@ -15,6 +16,7 @@ const HISTORY_REFRESH_MS = 10 * 60_000;
 
 const state = {
   status: null,
+  roomba: null, // last Roomba status, reported by the roomba panel
   days: loadDays(),
   drawer: {}, // litter box id -> /drawer response
   catColors: {},
@@ -75,13 +77,14 @@ function renderCards() {
   const status = state.status;
   if (!status) return;
   errorsBanner($("errors"), status);
+  renderAttention($("attention"), collectProblems({ status, roomba: state.roomba }), status);
   const boxes = status.litter_boxes.slice().sort(byName);
   const feeders = status.feeders.slice().sort(byName);
   $("litter-tiles").replaceChildren(...(boxes.length
     ? boxes.flatMap((box) => litterTiles(box, state.catColors))
     : [emptyNote("No litter box connected.")]));
   $("food-tiles").replaceChildren(...(feeders.length
-    ? feeders.map((feeder) => feederTile(feeder, state.feederCats[feeder.device_id], state.catColors))
+    ? [feedersPanel(feeders, state.feederCats, state.catColors)]
     : [emptyNote("No feeders connected.")]));
 }
 
@@ -433,6 +436,10 @@ function renderToday() {
 setupRange();
 renderToday();
 mountRoomba($("roomba-tiles"));
+window.addEventListener("roomba:status", (event) => {
+  state.roomba = event.detail.data;
+  renderCards();
+});
 subscribe(onStatus, setLive);
 setInterval(renderToday, 60_000);
 setInterval(renderCards, 30_000); // keep "x min ago" fresh

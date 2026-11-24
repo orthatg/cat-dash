@@ -1,8 +1,10 @@
-// Glanceable tiles: big numbers, pictograms instead of sentences, details on hover.
+// The live panels: waste drawer (the hero), litter level, last visit and clean cycle, feeders.
+// Insight tiles (patterns) live at the bottom and sit behind "History".
 
 import { columnChart } from "./charts.js";
+import { agoText, cycleState, drawerLevel, litterWords } from "./attention.js";
 import { catAvatar, h, pictogram } from "./dom.js";
-import { clock, dayPart, number, shortAgo, shortDate, shortIn, titleCase, weekdayTime } from "./format.js";
+import { dayClock, number } from "./format.js";
 
 /** Redraw a chart whenever its box changes width. */
 function responsive(el, draw) {
@@ -17,154 +19,164 @@ function responsive(el, draw) {
   return el;
 }
 
+function panelHead(icon, label, aside) {
+  return h("header", { class: "panel-head" }, pictogram(icon, { size: 22 }), h("h2", { text: label }), aside || null);
+}
+
+/** A vertical gauge: a filled column, with an optional mark (the usual level) across it. */
+function gauge({ kind, percent, label, valuetext, mark }) {
+  const level = Math.max(0, Math.min(100, percent ?? 0));
+  const fill = h("div", { class: "gauge-fill" });
+  fill.style.height = `${level}%`;
+  const body = h("div", { class: "gauge-body" }, fill);
+  const node = h("div", {
+    class: `gauge gauge-${kind}`, role: "meter", "aria-label": label,
+    "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(level)), "aria-valuetext": valuetext,
+  }, body);
+  if (mark) {
+    const line = h("div", { class: "gauge-mark" }, h("span", { text: `${number(mark)}%` }));
+    line.style.bottom = `${Math.min(100, mark)}%`;
+    node.append(line);
+  }
+  return node;
+}
+
 // ---------- litter box ----------
 
-function drawerStatus(box, now = Date.now()) {
-  const pct = box.waste_drawer_percent ?? 0;
-  const due = box.drawer_needs_emptying_at ? Date.parse(box.drawer_needs_emptying_at) : null;
-  if (box.waste_drawer_full || box.waste_drawer_state === "full" || pct >= 100) return "critical";
-  if ((due && due <= now) || (box.drawer_usual_empty_percent && pct >= box.drawer_usual_empty_percent)) return "warning";
-  return "ok";
+/** The shared shape of the three main panes: header, a graphic, then a small label over one big value. */
+function pane({ cls, level, aria, icon, title, graphic, label, value, valueIcon, quiet, note }) {
+  return h("article", { class: `panel pane ${cls}`, "data-level": level, "aria-label": aria },
+    panelHead(icon, title),
+    h("div", { class: "pane-graphic" }, graphic),
+    h("p", { class: "pane-read" },
+      h("span", { class: "pane-label", text: label }),
+      h("span", { class: `pane-value${quiet ? " quiet" : ""}` }, valueIcon || null, h("span", { text: value }))),
+    note ? h("p", { class: "pane-note", text: note }) : null);
 }
 
-/** The drawer: a bin that fills, a notch where it's usually emptied, the % and the date. */
-export function drawerTile(box) {
+/** The waste drawer: a ring for how full, and the one thing to act on, when to empty it. */
+export function drawerPanel(box, now = Date.now()) {
   const pct = Math.max(0, box.waste_drawer_percent ?? 0);
   const usual = box.drawer_usual_empty_percent;
-  const status = drawerStatus(box);
-  const fill = h("div", { class: "bin-fill" });
-  fill.style.height = `${Math.min(pct, 100)}%`;
-  const usualLine = usual ? h("div", { class: "bin-usual" }) : null;
-  if (usualLine) usualLine.style.bottom = `${Math.min(usual, 100)}%`;
-  const bin = h("div", {
-    class: "bin", role: "meter", "aria-label": "Waste drawer",
-    "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(pct)),
-    "aria-valuetext": `${number(pct)}% full${usual ? `, usually emptied at ${number(usual)}%` : ""}`,
-  }, h("div", { class: "bin-body" }, fill), usualLine, levelArrow("up", pct, "Fills up as it's used"));
-
-  const dueText = box.drawer_needs_emptying_at
-    ? `Empty it by ${dayPart(box.drawer_needs_emptying_at)} (around ${number(usual)}%). Full around ${dayPart(box.drawer_full_at)}.`
-    : "Not enough history to forecast yet.";
+  const level = drawerLevel(box, now);
+  const due = box.drawer_needs_emptying_at;
   let when;
-  if (status === "critical") when = h("span", { class: "when", title: "Drawer is full" }, pictogram("x", { label: "Full" }), h("span", { text: "Now" }));
-  else if (status === "warning") when = h("span", { class: "when", title: dueText }, pictogram("alert", { label: "Due" }), h("span", { text: "Today" }));
-  else if (box.drawer_needs_emptying_at) {
-    when = h("span", { class: "when", title: dueText }, pictogram("calendar", { label: "Empty by" }),
-      h("span", { text: shortDate(box.drawer_needs_emptying_at) }));
+  if (level === "full") when = { label: "Empty it", value: "Now" };
+  else if (level === "due") when = { label: "Empty it", value: "Today" };
+  else if (due) when = { label: "Empty by", value: dayClock(due) };
+  else when = { label: "Empty by", value: "Not enough history yet", quiet: true };
+  return pane({
+    cls: "pane-drawer", level, icon: "drawer", title: "Waste drawer",
+    aria: `Waste drawer ${number(pct)}% full. ${when.label} ${when.value}.`,
+    graphic: ring({ percent: pct, label: "Waste drawer", mark: usual,
+      markTitle: usual ? `Usually emptied at ${number(usual)}%` : null,
+      valuetext: `${number(pct)}% full${usual ? `, usually emptied at ${number(usual)}%` : ""}` }),
+    ...when,
+  });
+}
+
+/** A ring that fills clockwise from 12 o'clock, with an optional tick at `mark` percent. */
+function ring({ percent, label, valuetext, mark, markTitle }) {
+  const NS = "http://www.w3.org/2000/svg";
+  const level = Math.max(0, Math.min(100, percent ?? 0));
+  const el = (tag, attrs) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  };
+  const svg = el("svg", {
+    viewBox: "0 0 140 140", class: "ring", role: "meter", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": "100",
+    "aria-valuenow": String(Math.round(level)), "aria-valuetext": valuetext,
+  });
+  const arc = (cls) => el("circle", { class: cls, cx: "70", cy: "70", r: "56", pathLength: "100", transform: "rotate(-90 70 70)" });
+  const fill = arc("ring-fill");
+  // Round caps stick out half a stroke past each end of the dash, so pull the dash in by that
+  // much on both ends: the visible fill then spans exactly 0 to `level`.
+  const cap = (7.5 / (2 * Math.PI * 56)) * 100;
+  fill.setAttribute("stroke-dasharray", `${Math.max(0, level - 2 * cap)} 100`);
+  fill.setAttribute("stroke-dashoffset", String(-cap));
+  if (level <= 0) fill.setAttribute("visibility", "hidden");
+  const text = el("text", { class: "ring-num", x: "70", y: "70", "text-anchor": "middle", "dominant-baseline": "central" });
+  const unit = el("tspan", { class: "ring-unit" });
+  unit.textContent = "%";
+  text.append(document.createTextNode(number(level)), unit);
+  svg.append(arc("ring-track"), fill);
+  if (mark) {
+    const tick = el("line", { class: "ring-mark", x1: "70", y1: "7.5", x2: "70", y2: "20.5", transform: `rotate(${Math.min(100, mark) * 3.6} 70 70)` });
+    if (markTitle) {
+      const tip = el("title", {});
+      tip.textContent = markTitle;
+      tick.append(tip);
+    }
+    svg.append(tick);
   }
-
-  return h("article", { class: "tile tile-drawer", "data-status": status, "aria-label": `Waste drawer: ${dueText}` },
-    bin,
-    h("div", { class: "drawer-read" },
-      h("div", { class: "big" }, h("span", { text: number(pct) }), h("span", { class: "unit", text: "%" })),
-      when,
-      forecastDetail(box, status)));
+  svg.append(text);
+  return svg;
 }
 
-/** The numbers behind the date: "in 22h · at 82% · full Wed 9am". */
-function forecastDetail(box, status) {
-  if (!box.drawer_needs_emptying_at) return null;
-  const parts = [];
-  if (status === "ok") {
-    parts.push(`in ${shortIn(box.drawer_needs_emptying_at)}`);
-    if (box.drawer_usual_empty_percent) parts.push(`at ${number(box.drawer_usual_empty_percent)}%`);
-  }
-  if (box.drawer_full_at && status !== "critical") {
-    parts.push(`full ${weekdayTime(box.drawer_full_at)}`);
-  }
-  if (box.drawer_fill_rate_per_day) parts.push(`+${number(box.drawer_fill_rate_per_day)}%/day`);
-  // Each item stays whole; the line only breaks between items.
-  return parts.length
-    ? h("div", { class: "when-detail" }, parts.map((part, i) => [i ? " · " : null, h("span", { text: part })]))
-    : null;
-}
-
-/** A small arrow beside a gauge, at its level: which way the level moves with use. */
-function levelArrow(direction, percent, title) {
-  const arrow = h("span", { class: `level-arrow ${direction}`, title },
-    pictogram(direction === "up" ? "arrowUp" : "arrowDown", { size: 16, label: title }));
-  // A badge straddling the level line, inside the container; clamped so it never
-  // leaves it at 0% or 100%. The badge keeps it readable on any fill color.
-  const level = Math.max(0, Math.min(100, percent));
-  arrow.style.bottom = `clamp(3px, calc(${level}% - 12px), calc(100% - 27px))`;
-  return arrow;
-}
-
-/** Last visit (who + how long ago) and time since the last clean, in one tile. */
-function activityTile(box, catColors) {
-  const ago = splitAgo(box.last_cat_detected_at);
-  const clean = splitAgo(box.last_clean_cycle_at);
-  const issues = [];
-  if (!box.online) issues.push("Offline");
-  else if (!box.powered_on) issues.push("Off");
-  if (box.sleeping) issues.push("Sleep mode");
-  const who = box.last_cat;
-  return h("article", { class: "tile tile-activity",
-    "aria-label": `Last visit ${shortAgo(box.last_cat_detected_at)} ago${who ? ` by ${who}` : ""}; cleaned ${shortAgo(box.last_clean_cycle_at)} ago` },
-    h("div", { class: "act-main" },
-      who ? catAvatar(who, catColors[who], { size: 80, image: 68 }) : h("span", { class: "act-icon" }, pictogram("paw", { size: 28 })),
-      h("div", {},
-        h("div", { class: "big" }, h("span", { text: ago.value }), h("span", { class: "unit", text: ago.unit })),
-        h("div", { class: "caption act-caption" }, pictogram("paw", { size: 14 }),
-          h("span", { text: who ? `${who} visited` : "last visit" })))),
-    h("div", { class: "act-clean" }, pictogram("sparkle", { size: 18 }),
-      h("span", { class: "mid" }, h("strong", { text: clean.value }), h("span", { text: clean.unit })),
-      h("span", { class: "caption", text: "since clean" })),
-    issues.length ? h("div", { class: "who warn" }, pictogram("alert", { size: 14 }), h("span", { text: issues.join(" · ") })) : null);
-}
-
-/** Litter: a tub filled with litter to the current level; the level drains with use. */
-function litterTile(box) {
+/** The litter itself: a tray of sand at its level, and a plain-words state. */
+export function sandPanel(box) {
   const pct = Math.max(0, Math.min(100, box.litter_level_percent ?? 0));
-  const fill = h("div", { class: "tub-fill" });
-  fill.style.height = `${pct}%`;
-  const state = box.litter_level_state ? titleCase(box.litter_level_state) : null;
-  const low = box.litter_level_state && box.litter_level_state !== "OPTIMAL";
-  return h("article", { class: "tile tile-litter", "data-status": low ? "warning" : "ok" },
-    h("div", { class: "tile-top" }, pictogram("litter"), h("span", { class: "caption", text: "litter" })),
-    h("div", { class: "litter-viz" },
-      h("div", { class: "tub", role: "meter", "aria-label": "Litter level",
-        "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(pct)),
-        "aria-valuetext": `${number(pct)}% litter${state ? `, ${state}` : ""}` },
-      h("div", { class: "tub-body" }, fill), levelArrow("down", pct, "Goes down as it's used")),
-      h("div", { class: "big", title: state }, h("span", { text: number(pct) }), h("span", { class: "unit", text: "%" }))));
+  const state = box.litter_level_state;
+  const words = litterWords(state) || `${number(pct)}%`;
+  const level = state === "EMPTY" ? "critical" : state === "LOW" || state === "REFILL" ? "warning" : "ok";
+  return pane({
+    cls: "pane-sand", level, icon: "litter", title: "Litter", aria: `Litter ${words}, ${number(pct)}%`,
+    graphic: gauge({ kind: "sand", percent: pct, label: "Litter level", valuetext: `${number(pct)}%, ${words}` }),
+    label: `${number(pct)}%`, value: words,
+    valueIcon: level === "ok" ? null : pictogram("alert", { size: 28 }),
+  });
+}
+
+/** Last cat visit and the clean cycle that should follow it. */
+export function cyclePanel(box, catColors, now = Date.now()) {
+  const cycle = cycleState(box, now);
+  const who = box.last_cat;
+  const status = {
+    clean: { icon: "check", value: cycle.sinceClean != null ? `Cleaned ${agoText(cycle.sinceClean)}` : "Cleaned", level: "ok" },
+    running: { icon: "cycle", value: "Cleaning now", level: "info" },
+    waiting: { icon: "clock", value: cycle.minutesLeft > 0 ? `Cleans in ${cycle.minutesLeft} min` : "Cleans any moment", level: "info" },
+    overdue: { icon: "alert", value: "Hasn't cleaned", level: "critical" },
+    unknown: { icon: "help", value: "No cycles yet", level: "info" },
+  }[cycle.kind];
+  const visit = cycle.sinceVisit == null ? "No visits yet" : `${who ? `${who} visited` : "Visited"} ${agoText(cycle.sinceVisit)}`;
+  const portrait = h("span", { class: "portrait" },
+    who ? catAvatar(who, catColors[who], { size: 160, image: 136 }) : h("span", { class: "portrait-empty" }, pictogram("cat", { size: 64 })),
+    h("span", { class: "portrait-badge", "data-level": status.level }, pictogram(status.icon, { size: 28 })));
+  return pane({
+    cls: "pane-cycle", level: status.level, icon: "broom", title: "Cleaning",
+    aria: `${visit}. ${status.value}.`,
+    graphic: portrait, label: visit, value: status.value,
+    note: box.sleeping ? "Sleep mode is on" : null,
+  });
 }
 
 export function litterTiles(box, catColors) {
-  return [drawerTile(box), activityTile(box, catColors), litterTile(box)];
+  return [drawerPanel(box), sandPanel(box), cyclePanel(box, catColors)];
 }
 
 // ---------- feeders ----------
 
-export function feederTile(feeder, cats, catColors) {
-  const low = feeder.food_low === true;
-  const problems = [...(feeder.problems || [])].map(titleCase);
-  if (feeder.online === false) problems.unshift("Offline");
-  const warnings = [];
-  if (feeder.desiccant_days_left != null && feeder.desiccant_days_left < 0) {
-    warnings.push(`Desiccant overdue by ${number(-feeder.desiccant_days_left)} days`);
-  }
-  const name = cats?.length
-    ? h("div", { class: "who big-who" }, cats.map((cat) => [catAvatar(cat, catColors[cat], { size: 56, image: 48 }), h("span", { text: cat })]))
-    : h("div", { class: "who big-who" }, h("span", { text: feeder.name }));
-  const food = h("span", {
-    class: "food", "data-status": problems.length ? "critical" : low ? "warning" : "ok",
-    title: problems.length ? problems.join(", ") : low ? "Food low" : "Food OK",
-  }, pictogram(low ? "bowlEmpty" : "bowl", { label: low ? "Food low" : "Food OK" }));
-  return h("article", { class: "tile tile-feeder", "aria-label": `${cats?.join(" and ") || feeder.name}'s feeder (${feeder.name})` },
-    h("div", { class: "tile-top" }, name, food),
-    h("div", { class: "big" }, h("span", { text: number(feeder.today_dispensed_portions ?? 0) }),
-      h("span", { class: "unit", text: feeder.today_dispensed_portions === 1 ? " portion" : " portions" })),
-    h("div", { class: "feeder-foot" },
-      h("span", { class: "foot-item", title: "Next feed" }, pictogram("clock", { size: 16, label: "Next feed" }),
-        h("span", { text: feeder.next_feed_at ? clock(feeder.next_feed_at) : "—" })),
-      h("span", { class: "foot-item", title: "Feeder visits today" }, pictogram("paw", { size: 16, label: "Visits today" }),
-        h("span", { text: number(feeder.today_eat_count ?? 0) })),
-      warnings.length || problems.length
-        ? h("span", { class: "foot-item warn", title: [...problems, ...warnings].join(". ") },
-          pictogram("alert", { size: 16, label: "Needs attention" }), h("span", { text: String(problems.length + warnings.length) }))
-        : null,
-      h("span", { class: "foot-item muted", text: feeder.name })));
+/** One compact row per feeder: who it feeds, whether it's stocked, when it feeds next. */
+export function feedersPanel(feeders, feederCats, catColors) {
+  const rows = feeders.map((feeder) => {
+    const cats = feederCats[feeder.device_id] || [];
+    const low = feeder.food_low === true;
+    const offline = feeder.online === false;
+    const stock = offline ? { icon: "wifi", text: "Offline", level: "warning" }
+      : low ? { icon: "bowlEmpty", text: "Low on food", level: "warning" }
+        : { icon: "bowl", text: "Food OK", level: "ok" };
+    return h("li", { class: "strip-row", "data-level": stock.level },
+      h("span", { class: "strip-who" },
+        cats.map((cat) => catAvatar(cat, catColors[cat], { size: 36, image: 30 })),
+        h("span", { class: "strip-name" }, h("strong", { text: cats.length ? cats.join(" & ") : feeder.name }),
+          cats.length ? h("span", { class: "note", text: feeder.name }) : null)),
+      h("span", { class: "strip-stat" }, pictogram(stock.icon, { size: 20 }), h("span", { text: stock.text })),
+      h("span", { class: "strip-stat quiet", title: "Next feeding" }, pictogram("clock", { size: 20 }),
+        h("span", { text: feeder.next_feed_at ? `Next ${dayClock(feeder.next_feed_at)}` : "No feeding planned" })));
+  });
+  return h("article", { class: "panel panel-strip", "aria-label": "Feeders" },
+    panelHead("bowl", "Feeders"), h("ul", { class: "strip-list" }, rows));
 }
 
 // ---------- insights ----------
@@ -202,7 +214,7 @@ export function gapsTile(cats, catColors) {
         ariaLabel: `${c.name}: time between litter box visits`,
       }));
   });
-  return h("article", { class: "tile tile-insight" },
+  return h("article", { class: "panel tile-insight" },
     h("h2", { class: "tile-title" }, pictogram("clock"), h("span", { text: "Between litter visits" })),
     h("p", { class: "tile-note", text: "Hours between visits, share of all gaps" }),
     blocks.length ? blocks : h("p", { class: "muted", text: "Not enough visits yet." }));
@@ -237,7 +249,7 @@ export function mealsTile(cats, catColors) {
         ariaLabel: `${c.name}: litter box visits around meals, relative to chance`,
       }));
   });
-  return h("article", { class: "tile tile-insight" },
+  return h("article", { class: "panel tile-insight" },
     h("h2", { class: "tile-title" }, pictogram("bowl"), pictogram("chevron", { size: 14 }), pictogram("litter"),
       h("span", { text: "Litter after meals" })),
     h("p", { class: "tile-note", text: "Litter box visits before and after each meal. Line = chance (1×)." }),
@@ -249,10 +261,4 @@ export function mealsTile(cats, catColors) {
 function hours(value) {
   if (value == null) return "—";
   return value < 1 ? `${Math.round(value * 60)}m` : `${number(value, value < 10 ? 1 : 0)}h`;
-}
-
-function splitAgo(value) {
-  const text = shortAgo(value); // "35m", "2h", "3d"
-  const match = /^(\d+)(\D+)$/.exec(text);
-  return match ? { value: match[1], unit: match[2] } : { value: text, unit: "" };
 }
