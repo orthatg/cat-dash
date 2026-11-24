@@ -2,9 +2,9 @@ import { api, subscribe } from "./api.js";
 import { collectProblems, renderAttention } from "./attention.js";
 import { chartCard, columnChart, lineChart } from "./charts.js";
 import { errorsBanner, h } from "./dom.js";
-import { dayPart, longDateTime, number, parseDay, shortDay } from "./format.js";
-import { mountRoomba } from "./roomba.js";
-import { feedersPanel, gapsTile, litterTiles, mealsTile } from "./tiles.js";
+import { clock, dayPart, longDateTime, number, parseDay, shortDay } from "./format.js";
+import { watchRoomba } from "./roomba.js";
+import { catCard, cleaningCard, drawerCard, gapsTile, hours, litterCard, mealsTile } from "./tiles.js";
 
 // Identity colors (fixed slot per entity, never by rank). A cat keeps the same color in
 // both sections; a feeder takes its cat's color when it serves one cat.
@@ -16,7 +16,8 @@ const HISTORY_REFRESH_MS = 10 * 60_000;
 
 const state = {
   status: null,
-  roomba: null, // last Roomba status, reported by the roomba panel
+  roomba: null, // { phase, data, failure } from watchRoomba
+  catStats: {}, // cat name -> { usualEatMin, litterToday, usualLitter }
   days: loadDays(),
   drawer: {}, // litter box id -> /drawer response
   catColors: {},
@@ -71,21 +72,77 @@ function assignColors(feederVisits, litterCats) {
   state.feederColors = feederColors;
 }
 
-// ---------- tiles (live) ----------
+// ---------- cards (live) ----------
+
+// Feeder problem codes that mean food can't come out (a device-error message counts too).
+const BLOCKING = ["dispenser_blocked", "rotor_stuck", "lid_blocked", "stopped_working"];
+const isBlocked = (feeder) =>
+  (feeder.problems || []).some((p) => BLOCKING.includes(p) || String(p).startsWith("device_error"));
 
 function renderCards() {
   const status = state.status;
   if (!status) return;
   errorsBanner($("errors"), status);
-  renderAttention($("attention"), collectProblems({ status, roomba: state.roomba }), status);
+  renderAttention($("attention"),
+    collectProblems({ status, roomba: state.roomba?.data, feederCats: state.feederCats }), status, state.catColors);
   const boxes = status.litter_boxes.slice().sort(byName);
   const feeders = status.feeders.slice().sort(byName);
-  $("litter-tiles").replaceChildren(...(boxes.length
-    ? boxes.flatMap((box) => litterTiles(box, state.catColors))
-    : [emptyNote("No litter box connected.")]));
-  $("food-tiles").replaceChildren(...(feeders.length
-    ? [feedersPanel(feeders, state.feederCats, state.catColors)]
-    : [emptyNote("No feeders connected.")]));
+  $("hero").replaceChildren(
+    ...(boxes.length ? boxes.flatMap((box) => [drawerCard(box), litterCard(box)]) : [emptyNote("No litter box connected.")]),
+    cleaningCard(boxes[0] || null, state.roomba, state.catColors));
+  $("cats").replaceChildren(...catCards(boxes, feeders));
+}
+
+/** One card per cat: cats seen at a feeder first (in feeder order), then litter-only cats. */
+function catCards(boxes, feeders) {
+  const cards = [];
+  const seen = new Set();
+  const stats = (cat) => state.catStats[cat] || {};
+  for (const feeder of feeders) {
+    const cats = state.feederCats[feeder.device_id] || [];
+    for (const cat of cats) {
+      seen.add(cat);
+      const eatMin = cats.length === 1 && feeder.today_eat_seconds != null ? feeder.today_eat_seconds / 60 : null;
+      cards.push(catCard({ name: cat, color: state.catColors[cat], feeder, blocked: isBlocked(feeder),
+        stats: { ...stats(cat), eatMin } }));
+    }
+  }
+  for (const cat of boxes.flatMap((b) => (b.cats || []).map((c) => c.name)).sort()) {
+    if (seen.has(cat)) continue;
+    seen.add(cat);
+    cards.push(catCard({ name: cat, color: state.catColors[cat], feeder: null, blocked: false, stats: { ...stats(cat), eatMin: null } }));
+  }
+  return cards.length ? cards : [emptyNote("Loading the cats…")];
+}
+
+/** Today and each cat's usual day (mean of the other days in range) for the cat cards. */
+function computeCatStats({ litter, feeds }) {
+  const today = dayList(1)[0];
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const out = {};
+  const at = (cat) => (out[cat] ||= {});
+  const eating = {};
+  for (const { visits } of feeds) {
+    for (const row of visits) {
+      if (!row.pet_name || row.date === today) continue;
+      (eating[row.pet_name] ||= []).push(row.eating_seconds / 60);
+    }
+  }
+  for (const [cat, mins] of Object.entries(eating)) at(cat).usualEatMin = mean(mins);
+  const visitsByCat = {};
+  for (const { cats } of litter) {
+    for (const row of cats) {
+      if (row.cat === "Unknown") continue;
+      const c = (visitsByCat[row.cat] ||= { today: 0, other: [] });
+      if (row.date === today) c.today += row.visits;
+      else c.other.push(row.visits);
+    }
+  }
+  for (const [cat, v] of Object.entries(visitsByCat)) {
+    at(cat).litterToday = v.today;
+    at(cat).usualLitter = mean(v.other);
+  }
+  state.catStats = out;
 }
 
 function emptyNote(text) {
@@ -107,6 +164,7 @@ function onStatus(status) {
   const first = !state.status;
   state.status = status;
   renderCards();
+  renderUpdated();
   const key = historyKey(status);
   if (first || key !== state.historyKey) {
     state.historyKey = key;
@@ -175,6 +233,7 @@ async function loadHistory() {
       })),
       data.litter.flatMap(({ box }) => (box.cats || []).map((c) => c.name)),
     );
+    computeCatStats(data);
     renderCards();
     const daysList = dayList(days);
     const ctx = {
@@ -188,7 +247,7 @@ async function loadHistory() {
       gapsTile(data.insights.cats, state.catColors),
       mealsTile(data.insights.cats, state.catColors),
     );
-    renderMoreSummary(data, days);
+    renderPatterns(data, days);
     replaceCharts($("more-charts"), [
       ...data.litter.flatMap((entry) => litterCharts(entry, ctx, data.litter.length > 1)),
       ...(data.feeds.length ? foodCharts(data.feeds, ctx) : []),
@@ -205,22 +264,31 @@ function replaceCharts(container, cards) {
   container.replaceChildren(...cards);
 }
 
-// ---------- "More": summary numbers, then the full charts when opened ----------
+// ---------- History: pattern figures in its header, the full charts when opened ----------
 
-function renderMoreSummary({ litter, feeds }, days) {
-  const chips = [];
-  for (const { box, daily, drawer } of litter) {
+function renderPatterns({ litter, insights }, days) {
+  const bits = [];
+  const strong = (text) => h("strong", { text });
+  for (const { daily, drawer } of litter) {
     const cycles = daily.reduce((a, d) => a + d.clean_cycles, 0) / days;
-    chips.push([number(cycles, 1), "cleans / day"]);
-    if (drawer.average_days_between_empties) chips.push([`${number(drawer.average_days_between_empties, 1)} d`, "between empties"]);
-    if (box.lifetime_cycles) chips.push([number(box.lifetime_cycles), "lifetime cycles"]);
+    bits.push([strong(number(cycles, cycles < 10 ? 1 : 0)), " cleans a day"]);
+    if (drawer.average_days_between_empties) {
+      bits.push(["Drawer emptied every ", strong(`${number(drawer.average_days_between_empties, 1)} days`)]);
+    }
   }
-  const portions = feeds.reduce((a, f) => a + f.daily.reduce((x, d) => x + d.portions, 0), 0) / days;
-  if (feeds.length) chips.push([number(portions, 1), "portions / day"]);
-  const warnings = (state.status?.feeders || []).filter((f) => f.desiccant_days_left != null && f.desiccant_days_left < 0).length;
-  if (warnings) chips.push([String(warnings), warnings === 1 ? "desiccant overdue" : "desiccants overdue"]);
-  $("more-summary").replaceChildren(...chips.map(([value, label]) =>
-    h("span", { class: "chip" }, h("strong", { text: value }), h("span", { text: label }))));
+  const gaps = (insights?.cats || []).filter((c) => c.litter_gaps);
+  if (gaps.length) {
+    bits.push(gaps.flatMap((c, i) => [i ? ", " : "", `${c.name} visits every `, strong(hours(c.litter_gaps.median_hours))]));
+  }
+  const ratios = (insights?.cats || []).map((c) => {
+    const w = c.meal_timing?.after_meal.find((a) => a.within_minutes === 15);
+    return w && w.chance ? w.share / w.chance : null;
+  }).filter((r) => r != null);
+  if (ratios.length && ratios.every((r) => r >= 1.5)) {
+    const avg = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+    bits.push([ratios.length > 1 ? "Both " : "", strong(`~${number(avg)}×`), " likelier to use the box after eating"]);
+  }
+  $("more-summary").replaceChildren(...bits.map((parts) => h("span", { class: "fact" }, parts)));
 }
 
 // ---------- litter box charts ----------
@@ -428,19 +496,29 @@ function setLive(stateName) {
 }
 
 function renderToday() {
-  $("today").textContent = new Date().toLocaleDateString([], {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
+  $("today").textContent = new Date().toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** When the devices last reported: the newest update time in the status. */
+function renderUpdated() {
+  const stamps = [...(state.status?.litter_boxes || []), ...(state.status?.feeders || [])]
+    .map((d) => Date.parse(d.updated_at)).filter(Number.isFinite);
+  const el = $("updated");
+  if (!stamps.length) { el.hidden = true; return; }
+  const newest = Math.max(...stamps);
+  el.hidden = false;
+  el.textContent = `Updated ${clock(newest)}`;
+  el.dataset.stale = String(Date.now() - newest > 30 * 60_000);
 }
 
 setupRange();
 renderToday();
-mountRoomba($("roomba-tiles"));
-window.addEventListener("roomba:status", (event) => {
-  state.roomba = event.detail.data;
+watchRoomba((roomba) => {
+  state.roomba = roomba;
   renderCards();
 });
 subscribe(onStatus, setLive);
 setInterval(renderToday, 60_000);
+setInterval(renderUpdated, 60_000);
 setInterval(renderCards, 30_000); // keep "x min ago" fresh
 setInterval(loadHistory, HISTORY_REFRESH_MS);

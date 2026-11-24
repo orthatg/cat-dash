@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cat Dash</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&amp;family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;display=swap" />
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="js/main.js"></script>
   </head>
@@ -13,38 +16,26 @@
       <header class="bar">
         <h1>Cat Dash</h1>
         <span id="today" class="today">—</span>
+        <span id="updated" class="today updated" hidden></span>
         <span id="live" class="live" data-state="connecting" role="status">
           <span class="live-dot" aria-hidden="true"></span><span class="live-text">Connecting</span>
         </span>
-        <div class="perch" aria-hidden="true">
-          <img class="perch-zora" src="assets/cats/zora-cutout.png" alt="" onerror="this.remove()" />
-          <img class="perch-maui" src="assets/cats/maui-cutout.png" alt="" onerror="this.remove()" />
-        </div>
       </header>
 
       <section id="attention" class="attention" data-level="ok" aria-label="What needs you" aria-live="polite">
-        <div class="att-calm"><p class="att-calm-text">Checking the devices…</p></div>
+        <div class="calm"><p>Checking the devices…</p></div>
       </section>
 
       <div id="errors" class="errors" hidden></div>
 
       <main>
-        <section aria-label="Litter box">
-          <div id="litter-tiles" class="litter-grid"><p class="muted">Loading…</p></div>
-        </section>
-
-        <section aria-label="Feeders">
-          <div id="food-tiles"><p class="muted">Loading…</p></div>
-        </section>
-
-        <section aria-label="Robot vacuum">
-          <div id="roomba-tiles"></div>
-        </section>
+        <div id="hero" class="hero" aria-label="Litter box and cleaning"><p class="muted">Loading…</p></div>
+        <div id="cats" class="cats" aria-label="Cats"></div>
 
         <details id="more" class="more">
           <summary>
             <span class="more-label">History</span>
-            <span id="more-summary" class="chips"></span>
+            <span id="more-summary" class="facts"></span>
             <span class="range" role="radiogroup" aria-label="History range">
               <button type="button" role="radio" data-days="7" aria-checked="false">7d</button>
               <button type="button" role="radio" data-days="30" aria-checked="true">30d</button>

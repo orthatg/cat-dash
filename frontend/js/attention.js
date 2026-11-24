@@ -1,7 +1,7 @@
 // What needs a person? Pure rules (no DOM) that turn device status into a short list of
-// problems, worst first, plus the attention bar that shows them.
+// problems, worst first, plus the alert list that shows them at the top of the page.
 
-import { h, pictogram } from "./dom.js";
+import { catAvatar, h, pictogram } from "./dom.js";
 import { dayClock, number } from "./format.js";
 
 const MIN = 60_000;
@@ -23,8 +23,6 @@ const FAULTS = {
   PD: ["Pinch detected", "Check the globe opening is clear."],
   SPF: ["Pinch detected at startup", "Check the globe opening is clear."],
 };
-
-const minutesSince = (iso, now) => (iso ? Math.max(0, Math.round((now - Date.parse(iso)) / MIN)) : null);
 
 export function agoText(minutes) {
   if (minutes == null) return "never";
@@ -51,7 +49,7 @@ export function cycleState(box, now = Date.now()) {
   return { kind: "overdue", sinceVisit, sinceClean };
 }
 
-/** The drawer is the box's own concern: full, almost full, or past its usual empty date. */
+/** The drawer is the box's own concern: full, past its usual emptying level/time, or fine. */
 export function drawerLevel(box, now = Date.now()) {
   const pct = box.waste_drawer_percent ?? 0;
   const due = box.drawer_needs_emptying_at ? Date.parse(box.drawer_needs_emptying_at) : null;
@@ -60,8 +58,15 @@ export function drawerLevel(box, now = Date.now()) {
   return "ok";
 }
 
-export function litterWords(state) {
-  return { OPTIMAL: "Good", OVERFILL: "Overfilled", REFILL: "Refill soon", LOW: "Low", EMPTY: "Empty" }[state] || null;
+/**
+ * The robot's litter percentage isn't reliable, so the dashboard only says Good or Needs refill.
+ * "good" | "refill" | "empty"
+ */
+export function litterLevel(box) {
+  const s = box.litter_level_state;
+  if (s === "EMPTY") return "empty";
+  if (s === "REFILL" || s === "LOW") return "refill";
+  return "good";
 }
 
 /** Problems with one litter box. */
@@ -90,8 +95,9 @@ export function litterProblems(box, now = Date.now()) {
   } else if (code === "DF1" || code === "DF2") {
     add("warning", "drawer", "Waste drawer is almost full", "Empty it before the next few cycles.");
   } else if (drawer === "due") {
-    add("warning", "drawer", "Time to empty the waste drawer",
-      box.drawer_needs_emptying_at ? `It was due ${dayClock(box.drawer_needs_emptying_at)}.` : `It's at ${number(pct)}%.`);
+    const usual = box.drawer_usual_empty_percent;
+    add("warning", "drawer", `Time to empty the drawer (${number(pct)}%)`,
+      usual ? `You usually empty it at ${number(usual)}%.` : `It's at ${number(pct)}%.`);
   }
 
   // A full drawer already explains a missed clean, so don't list both.
@@ -100,68 +106,94 @@ export function litterProblems(box, now = Date.now()) {
       `Last visit was ${cycle.sinceVisit} min ago. It should start ${CLEAN_WAIT_MIN} min after a visit.`);
   }
 
-  if (box.litter_level_state === "EMPTY") add("critical", "litter", "Out of litter", "Refill the box.");
-  else if (box.litter_level_state === "REFILL" || box.litter_level_state === "LOW") {
-    add("warning", "litter", "Litter is running low", `It's at ${number(box.litter_level_percent ?? 0)}%.`);
-  }
+  const litter = litterLevel(box);
+  if (litter === "empty") add("critical", "litter", "Out of litter", "Refill the box.");
+  else if (litter === "refill") add("warning", "litter", "Litter needs a refill", "Top it up, or check the hopper isn't empty.");
   return out;
 }
 
-export function feederProblems(feeder) {
+// Feeder problem codes that mean food can't come out.
+const BLOCKING = new Set(["dispenser_blocked", "rotor_stuck", "lid_blocked", "stopped_working"]);
+
+/**
+ * Problems with one feeder. A feeder can report the same blockage twice (a problem code and a
+ * device-error message), so they fold into one alert: the code sets the title, the message the hint.
+ * `cats` are the cats that eat there; with one, the alert is about that cat and shows them.
+ */
+export function feederProblems(feeder, cats = []) {
   const out = [];
-  const add = (level, icon, title, hint) => out.push({ level, icon, title, hint, source: "feeder" });
-  if (feeder.online === false) add("warning", "wifi", `${feeder.name} feeder is offline`, "Check its power and Wi-Fi.");
-  if (feeder.food_low) add("warning", "bowlEmpty", `${feeder.name} feeder is low on food`, "Top up the hopper.");
-  for (const p of feeder.problems || []) add("warning", "alert", `${feeder.name} feeder: ${String(p).replace(/_/g, " ").toLowerCase()}`, "");
+  const cat = cats.length === 1 ? cats[0] : null;
+  const whose = cat ? `${cat}'s feeder` : `${feeder.name} feeder`;
+  const add = (level, icon, title, hint) => out.push({ level, icon, title, hint, source: "feeder", cat });
+  if (feeder.online === false) {
+    add("warning", "wifi", `${whose} is offline`, "Check its power and Wi-Fi.");
+    return out;
+  }
+  const codes = (feeder.problems || []).map(String);
+  const message = codes.find((p) => p.startsWith("device_error:"))?.slice("device_error:".length).trim();
+  const blocked = codes.some((p) => BLOCKING.has(p));
+  if (blocked || message) {
+    const detail = message ? `${feeder.name} reports ${message.toLowerCase()}.` : `${feeder.name} can't dispense food.`;
+    const meal = feeder.next_feed_at ? ` Clear it before the ${dayClock(feeder.next_feed_at).replace(/^Today /, "")} meal.` : "";
+    add("warning", "bowlEmpty", blocked ? `${whose} is blocked` : `${whose} reported a problem`, detail + meal);
+  }
+  if (feeder.food_low) add("warning", "bowlEmpty", `${whose} is low on food`, "Top up the hopper.");
   return out;
 }
 
-/** Roomba problems, from the status the roomba tile fetched. */
+/** Roomba problems, from the status the dashboard fetched. */
 export function roombaProblems(s) {
   if (!s) return [];
   const out = [];
+  const who = s.name || "it";
   const add = (level, icon, title, hint) => out.push({ level, icon, title, hint, source: "roomba" });
-  if (s.state === "stuck") add("critical", "robot", "Roomba is stuck", s.error_text && s.error_text !== "Error" ? s.error_text : "Check under it and around the wheels.");
-  else if (s.state === "error") add("critical", "robot", "Roomba needs attention", s.error_text && s.error_text !== "Error" ? s.error_text : "It reported a problem.");
-  if (s.bin_full) add("warning", "bin", "Roomba's bin is full", "Empty it so the next run can finish.");
-  else if (s.bin_present === false) add("warning", "bin", "Roomba's bin is missing", "Put it back before the next run.");
+  const err = s.error_text && s.error_text !== "Error" ? s.error_text : null;
+  if (s.state === "stuck") add("critical", "robot", "Roomba is stuck", err || `Check under ${who} and around the wheels.`);
+  else if (s.state === "error") add("critical", "robot", "Roomba needs attention", err || `${s.name || "It"} reported a problem.`);
+  if (s.bin_full) add("warning", "bin", "Roomba bin is full", `Empty ${s.name ? `${s.name}'s` : "its"} bin so the next run can finish.`);
+  else if (s.bin_present === false) add("warning", "bin", "Roomba bin is missing", "Put it back before the next run.");
   return out;
 }
 
-export function collectProblems({ status, roomba }, now = Date.now()) {
+export function collectProblems({ status, roomba, feederCats = {} }, now = Date.now()) {
   const all = [
     ...(status?.litter_boxes || []).flatMap((b) => litterProblems(b, now)),
-    ...(status?.feeders || []).flatMap(feederProblems),
+    ...(status?.feeders || []).flatMap((f) => feederProblems(f, feederCats[f.device_id] || [])),
     ...roombaProblems(roomba),
   ];
   const rank = { critical: 0, warning: 1 };
   return all.sort((a, b) => rank[a.level] - rank[b.level]);
 }
 
-// ---------- the bar ----------
+// ---------- the alert list ----------
 
 /** One line when all is well: what's coming up next. */
 function calmLine(status) {
   const box = status?.litter_boxes?.[0];
-  if (box?.drawer_needs_emptying_at) return `Empty the drawer by ${dayClock(box.drawer_needs_emptying_at)}.`;
+  if (box?.drawer_needs_emptying_at) {
+    const when = dayClock(box.drawer_needs_emptying_at).replace(/^(Today|Tomorrow) /, (w) => w.toLowerCase());
+    return `Next: empty the drawer by ${when}.`;
+  }
   return "Nothing needs you right now.";
 }
 
-export function renderAttention(container, problems, status) {
-  const worst = problems[0]?.level;
-  container.dataset.level = worst || "ok";
+const TAG = { critical: "Now", warning: "Soon" };
+
+export function renderAttention(container, problems, status, catColors = {}) {
+  container.dataset.level = problems[0]?.level || "ok";
   if (!problems.length) {
-    container.replaceChildren(h("div", { class: "att-calm" }, pictogram("check", { size: 28 }),
-      h("p", { class: "att-calm-text" }, h("strong", { text: "All clear. " }), h("span", { text: calmLine(status) }))));
+    container.replaceChildren(h("div", { class: "calm" }, pictogram("check", { size: 28 }),
+      h("p", {}, h("strong", { text: "All clear. " }), h("span", { text: calmLine(status) }))));
   } else {
-    container.replaceChildren(h("ul", { class: "att-list" }, problems.map((p) =>
-      h("li", { class: "att-item", "data-level": p.level },
-        pictogram(p.icon, { size: 32 }),
-        h("div", { class: "att-body" },
-          h("p", { class: "att-title", text: p.title }),
-          p.hint ? h("p", { class: "att-hint", text: p.hint }) : null)))));
+    container.replaceChildren(...problems.map((p) =>
+      h("div", { class: "alert", "data-level": p.level, role: p.level === "critical" ? "alert" : "status" },
+        p.cat
+          ? catAvatar(p.cat, catColors[p.cat], { size: 60, image: 54 })
+          : h("span", { class: "alert-icon" }, pictogram(p.icon, { size: 30 })),
+        h("div", { class: "alert-body" },
+          h("p", { class: "alert-title" }, h("span", { text: p.title }), h("span", { class: "alert-tag", text: TAG[p.level] || "" })),
+          p.hint ? h("p", { class: "alert-hint", text: p.hint }) : null))));
   }
   const n = problems.length;
   document.title = n ? `(${n}) Cat Dash` : "Cat Dash";
 }
-
