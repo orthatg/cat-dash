@@ -41,8 +41,9 @@ function ring({ size, r, width, p, cls, label, mark }) {
   const notch = mark == null ? null : (() => {
     const a = mark * 2 * Math.PI - Math.PI / 2;
     const at = (rad) => [mid + rad * Math.cos(a), mid + rad * Math.sin(a)];
-    const [x1, y1] = at(r - width + 2);
-    const [x2, y2] = at(r + width - 2);
+    // Stays inside the ring's band (r ± width/2), so it reads as a mark on the ring, not a hand.
+    const [x1, y1] = at(r - width / 2 + 1);
+    const [x2, y2] = at(r + width / 2 - 1);
     return svg("line", { class: "ring-notch", x1, y1, x2, y2 });
   })();
   return svg("svg", { class: `ring ${cls || ""}`, viewBox: `0 0 ${size} ${size}`, role: "img", "aria-label": label },
@@ -107,6 +108,9 @@ export function litterCard(box) {
 
 // ---------- cleaning: litter box + Roomba ----------
 
+/** "57 min ago" stays on one line, so a narrow card wraps before it, not inside it. */
+const keep = (text) => text.replace(/ /g, "\u00a0");
+
 function badge(kind) {
   const icon = { ok: "check", critical: "x", info: "clock", warning: "alert" }[kind] || "clock";
   return h("span", { class: "badge", "data-kind": kind }, pictogram(icon, { size: 14 }));
@@ -122,7 +126,7 @@ function boxRow(box, catColors, now) {
   else if (cycle.kind === "running") [title, sub, kind] = ["Cleaning now", visited, "info"];
   else if (cycle.kind === "waiting") [title, sub, kind] = [cycle.minutesLeft ? `Cleans in ${cycle.minutesLeft} min` : "Cleaning soon", visited, "info"];
   else if (cycle.kind === "overdue") [title, sub, kind] = ["Clean didn't run", visited, "critical"];
-  else if (cycle.sinceClean != null) [title, sub, kind] = [`Cleaned ${agoText(cycle.sinceClean)}`, cat ? `After ${cat}'s visit` : visited, "ok"];
+  else if (cycle.sinceClean != null) [title, sub, kind] = [`Cleaned ${keep(agoText(cycle.sinceClean))}`, cat ? `After ${cat}'s visit` : visited, "ok"];
   else [title, sub, kind] = ["No clean yet", null, "info"];
   if (box.sleeping) sub = [sub, "sleep mode"].filter(Boolean).join(" · ");
   const pic = cat
@@ -138,7 +142,7 @@ function boxRow(box, catColors, now) {
 
 function roombaRow(rb, now) {
   const s = rb?.data;
-  let title, sub, kind;
+  let title, sub, short, kind;
   if (rb?.phase === "unconfigured") [title, sub, kind] = ["Not set up", "Add its address and password to the backend settings", "info"];
   else if (!s) [title, sub, kind] = rb?.phase === "error" ? ["Can't reach it", "It may be asleep or off Wi-Fi", "warning"] : ["Checking…", null, "info"];
   else {
@@ -146,7 +150,7 @@ function roombaRow(rb, now) {
     const last = toDate(s.last_mission_started_at) || toDate(s.last_command_at);
     if (s.state === "cleaning") title = "Cleaning now";
     else if (st.tone === "critical") title = st.word;
-    else title = last ? `Ran ${agoText(Math.round((now - last) / MIN))}` : "No runs yet";
+    else title = last ? `Ran ${keep(agoText(Math.round((now - last) / MIN)))}` : "No runs yet";
     const bits = [];
     if (last && s.state !== "cleaning") bits.push(sameDay(last, now) ? clock(last) : dayClock(last));
     if (s.state !== "cleaning" && st.tone !== "critical") bits.push(st.word.toLowerCase());
@@ -156,6 +160,9 @@ function roombaRow(rb, now) {
     if (next && next > now) bits.push(`next in ${shortIn(next, now)}`);
     if (rb.failure) bits.push("can't reach it now");
     sub = bits.join(" · ");
+    // Narrow cards show only what it's doing and the bin.
+    short = [s.state !== "cleaning" && st.tone !== "critical" ? st.word : null,
+      s.bin_full ? "bin full" : s.bin_present === false ? "bin missing" : "bin OK"].filter(Boolean).join(" · ");
     kind = st.tone === "critical" ? "critical" : s.bin_full || s.bin_present === false ? "warning" : s.state === "cleaning" ? "info" : "ok";
   }
   const name = s?.name ? `Roomba · ${s.name}` : "Roomba";
@@ -164,7 +171,8 @@ function roombaRow(rb, now) {
     h("div", { class: "row-text" },
       h("p", { class: "row-label", text: name }),
       h("p", { class: "row-title", text: title }),
-      sub ? h("p", { class: "row-sub", text: sub }) : null));
+      sub ? h("p", { class: short ? "row-sub sub-full" : "row-sub", text: sub }) : null,
+      short ? h("p", { class: "row-sub sub-short", text: short }) : null));
 }
 
 function sameDay(a, b) {

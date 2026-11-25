@@ -150,7 +150,7 @@ main { display: grid; gap: 20px; }
 .ring circle { fill: none; }
 .ring-track { stroke: var(--track); }
 .ring-fill { stroke-linecap: round; transition: stroke-dasharray 0.6s ease; }
-.ring-notch { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+.ring-notch { stroke: var(--ink); stroke-width: 2.5; stroke-linecap: butt; stroke-dasharray: 3 2.5; opacity: 0.55; }
 
 .dial { position: relative; width: 220px; height: 220px; }
 .dial .ring { width: 220px; height: 220px; }
@@ -197,15 +197,46 @@ main { display: grid; gap: 20px; }
 .row-title { font: 700 22px/1.15 var(--display); }
 .clean-row[data-kind="critical"] .row-title { color: var(--crit); }
 .row-sub { margin-top: 3px; color: var(--ink-3); font-size: 14px; }
+.sub-short { display: none; }
+
+/* Medium widths (tablet, a narrow window): the three hero cards stay in one row instead of
+   wrapping 2 + 1. Smaller rings, and the secondary lines drop so nothing wraps awkwardly. */
+@media (min-width: 641px) and (max-width: 987px) {
+  .hero { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .hero .card { padding: 16px; border-radius: 24px; }
+  .card-drawer, .card-litter { gap: 12px; }
+  .dial, .dial .ring { width: 140px; height: 140px; }
+  .dial-num { font-size: 38px; }
+  .dial-unit { font-size: 18px; }
+  .dial-dir, .card-drawer .card-sub, .card-litter .card-sub { display: none; }
+  .tub-disc { width: 140px; height: 140px; }
+  .tub { width: 96px; height: 77px; }
+  .hero .card-value { font-size: 20px; }
+  .hero .card-kicker { font-size: 13px; }
+  .clean-row { gap: 10px; padding: 12px 0; }
+  .clean-row .avatar { width: 46px !important; height: 46px !important; }
+  .clean-row .avatar img { width: 40px !important; height: 40px !important; }
+  .row-pic { width: 46px; height: 46px; }
+  .row-pic .picto { width: 26px; height: 26px; }
+  .badge { width: 20px; height: 20px; right: -3px; bottom: -3px; }
+  .badge .picto { width: 11px; height: 11px; }
+  .row-label, .row-sub { font-size: 12px; }
+  .row-title { font-size: 17px; }
+  .sub-full { display: none; }
+  .sub-short { display: block; }
+}
 
 /* cats */
 .cats { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); }
-.card-cat { display: flex; flex-wrap: wrap; align-items: center; gap: 20px 24px; padding: 24px 28px 26px; }
-.cat-art { position: relative; flex: 0 0 200px; height: 190px; display: flex; align-items: flex-end; justify-content: center; }
-.cat-halo { position: absolute; left: 10px; right: 10px; bottom: 0; height: 168px; border-radius: 50%;
+/* The drawing shrinks (200 → 120 px) before the rings wrap under it: both grow from small bases,
+   and the drawing stops growing at 200 px. The rings only wrap once the card is too narrow
+   for a 120 px drawing beside them. */
+.card-cat { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px 24px; padding: 24px 28px 26px; }
+.cat-art { position: relative; flex: 1 1 120px; max-width: 200px; aspect-ratio: 200 / 190; display: flex; align-items: flex-end; justify-content: center; }
+.cat-halo { position: absolute; left: 5%; right: 5%; bottom: 0; height: 88%; border-radius: 50%;
   background: color-mix(in srgb, var(--ring) 14%, var(--card)); }
-.cutout { position: relative; display: block; max-width: 200px; max-height: 190px; object-fit: contain; }
-.cat-main { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.cutout { position: relative; display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.cat-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .cat-top { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .cat-name { display: flex; align-items: center; gap: 10px; font: 800 32px/1 var(--display); letter-spacing: -0.02em; }
 .cat-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
@@ -226,9 +257,7 @@ main { display: grid; gap: 20px; }
 .cat-next { display: inline-flex; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 14px; }
 @media (max-width: 640px) {
   .card-cat { padding: 16px; gap: 14px; }
-  .cat-art { flex-basis: 112px; height: 104px; }
-  .cat-halo { left: 4px; right: 4px; height: 92px; }
-  .cutout { max-width: 112px; max-height: 104px; }
+  .cat-art { max-width: 140px; }
   .cat-name { font-size: 26px; }
   .stat-dial, .stat-dial .ring { width: 92px; height: 92px; }
   .stat-num { font-size: 26px; }
