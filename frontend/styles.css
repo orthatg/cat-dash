@@ -8,13 +8,13 @@
 
 .viz-root {
   color-scheme: light;
-  --page: #ebeae6;
-  --card: #ffffff;
+  --page: #e5e3dd;
+  --card: #f9f8f4;
   --ink: #1b1c1f;
   --ink-2: #3f4146;
   --ink-3: #5c5e64;
-  --line: #eceae5;
-  --grid: #eceae5;
+  --line: #e6e4de;
+  --grid: #e6e4de;
   --axis: #c9c7c0;
   --surface-1: var(--card);
   --text-primary: var(--ink);
@@ -28,15 +28,15 @@
   --crit-bg: #fbe1dd;
   --crit-ink: #7a1a12;
   --drawer: #2b2d31;
-  --track: #eceae5;
+  --track: #e6e4de;
   --crit-track: #f6dcd8;
   --sand: #c9b47f;
   --sand-grain: #7e6a3d;
-  --sand-disc: #f5f1e7;
+  --sand-disc: #f0eadc;
   --sand-disc-low: #fbf1dc;
   --pic-bg: #eef0f2;
   /* Named cat colors from their portraits (validated as a pair, light + dark). */
-  --cat-zora: #989088;
+  --cat-zora: #948c84;
   --cat-maui: #9e5620;
   --series-1: #2b5c9e;
   --series-2: #c4572e;
